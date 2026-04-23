@@ -11,16 +11,22 @@ class Game:
         pygame.display.set_caption("Bomberman DSA Project")
         self.clock = pygame.time.Clock()
         
-        # DSA: Queue quản lý bom (FIFO)
         self.bomb_queue = deque()
-        # DSA: Min-Heap quản lý Power-up hết hạn
         self.active_effects = [] 
-        
         self.player_pos = [1, 1]
+
+        # 1. Khởi tạo map toàn ô trống
         self.map = [[EMPTY for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        # Tạo viền tường
-        for i in range(GRID_WIDTH):
-            self.map[0][i] = self.map[GRID_HEIGHT-1][i] = WALL
+
+        # 2. Tạo tường bao quanh (Đóng kín 4 cạnh)
+        for r in range(GRID_HEIGHT):
+            for c in range(GRID_WIDTH):
+                if r == 0 or r == GRID_HEIGHT - 1 or c == 0 or c == GRID_WIDTH - 1:
+                    self.map[r][c] = WALL
+                
+                # Bonus: Tạo các cột trụ cứng ở giữa (đặc trưng của Bomberman)
+                elif r % 2 == 0 and c % 2 == 0:
+                    self.map[r][c] = WALL
 
     def handle_input(self):
         keys = pygame.key.get_pressed()
