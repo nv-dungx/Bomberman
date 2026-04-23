@@ -1,3 +1,4 @@
+# settings.py
 TILE_SIZE = 40
 GRID_WIDTH = 15
 GRID_HEIGHT = 13
@@ -5,9 +6,14 @@ SCREEN_WIDTH = TILE_SIZE * GRID_WIDTH
 SCREEN_HEIGHT = TILE_SIZE * GRID_HEIGHT
 FPS = 60
 
-# Màu sắc
+# Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 GRAY = (100, 100, 100)
-RED = (255, 0, 0) # Màu Bom
-BLUE = (0, 0, 255) # Màu Player
+RED = (255, 0, 0)
+BLUE = (0, 0, 255)
+
+# Quan trọng nhất: Thêm các dòng này vào
+EMPTY = 0
+WALL = 1
+SOFT_WALL = 2
