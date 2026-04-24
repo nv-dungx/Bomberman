@@ -86,15 +86,23 @@ class Game:
         self.enemies = [Enemy(GRID_WIDTH - 2, GRID_HEIGHT - 2)]
 
     def setup_walls(self):
+        """Khởi tạo tường với mật độ thưa hơn"""
         for r in range(GRID_HEIGHT):
             for c in range(GRID_WIDTH):
+                # 1. Tường cứng bao quanh và cột trụ
                 if r == 0 or r == GRID_HEIGHT-1 or c == 0 or c == GRID_WIDTH-1:
                     self.map[r][c] = WALL
                 elif r % 2 == 0 and c % 2 == 0:
                     self.map[r][c] = WALL
+                # 2. Sinh tường mềm ngẫu nhiên
                 else:
-                    if r <= 2 and c <= 2: continue
-                    if random.random() < 0.5: self.map[r][c] = SOFT_WALL
+                    # Chừa trống góc 3x3 cho người chơi xuất phát
+                    if r <= 2 and c <= 2:
+                        continue
+                    
+                    # GIẢM MẬT ĐỘ: Thay vì 0.6, dùng 0.35 để tường thưa hơn
+                    if random.random() < 0.35: 
+                        self.map[r][c] = SOFT_WALL
 
     def handle_input(self):
         keys = pygame.key.get_pressed()

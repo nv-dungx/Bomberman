@@ -2,7 +2,7 @@
 
 # 1. Cấu hình lưới (Grid)
 TILE_SIZE = 40
-GRID_WIDTH = 21   # Số lẻ để tường cột trụ đều
+GRID_WIDTH = 31   # Số lẻ để tường cột trụ đều
 GRID_HEIGHT = 15
 SCREEN_WIDTH = TILE_SIZE * GRID_WIDTH
 SCREEN_HEIGHT = TILE_SIZE * GRID_HEIGHT
