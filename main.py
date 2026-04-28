@@ -318,3 +318,4 @@ if __name__ == "__main__":
     while True:
         game.handle_input(); game.update(); game.draw()
         game.clock.tick(FPS)
+        
