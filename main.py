@@ -25,9 +25,10 @@ class Enemy:
             if current == target: break
             for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 nx, ny = current[0] + dx, current[1] + dy
-                # 👾 DSA: Quái coi EMPTY và TRAP_TELEPORT là đường đi được
+                # 👾 DSA: AI nhận diện tất cả bẫy là đường đi được
                 if (0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT and
-                    game_map[ny][nx] in [EMPTY, TRAP_TELEPORT] and (nx, ny) not in parent_map):
+                    game_map[ny][nx] in [EMPTY, TRAP_TELEPORT, TRAP_ICE, CONVEYOR_LEFT, CONVEYOR_RIGHT] and 
+                    (nx, ny) not in parent_map):
                     parent_map[(nx, ny)] = current
                     queue.append((nx, ny))
         
@@ -54,19 +55,21 @@ class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Bomberman DSA - Ghost Mode & Teleport")
+        pygame.display.set_caption("Bomberman DSA - Traps & Physics")
         self.clock = pygame.time.Clock()
         
         self.player_rect = pygame.Rect(TILE_SIZE + 5, TILE_SIZE + 5, PLAYER_WIDTH, PLAYER_HEIGHT)
         self.player_current_speed = PLAYER_SPEED
+        self.last_dx, self.last_dy = 0, 0 # Lưu hướng di chuyển để xử lý trượt băng
         self.is_dead = False
         
         # 🛡️ Quản lý Buff
         self.shields = []             
         self.invulnerable_until = 0   
-        self.is_ghost = False          # Cờ trạng thái đi xuyên tường
+        self.is_ghost = False          
         
         self.bomb_queue = deque()
+        self.forced_move_queue = deque() # ➡️ DSA: Queue xử lý push event của Băng chuyền
         self.explosions = []
         self.powerups = {}        
         self.active_effects = []
@@ -74,8 +77,8 @@ class Game:
         self.show_visualization = False 
         
         self.map = [[EMPTY for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
-        self.teleports = []            # Lưu tọa độ 2 cổng dịch chuyển
-        self.teleport_cooldown = 0     # Chống kẹt teleport liên tục
+        self.teleports = []            
+        self.teleport_cooldown = 0     
         
         self.setup_walls()
         
@@ -95,16 +98,32 @@ class Game:
                     self.map[r][c] = WALL
                 else:
                     if r <= 2 and c <= 2: continue
-                    if random.random() < 0.3: 
+                    
+                    # Phân bổ xác suất sinh Bẫy và Tường mềm
+                    rand = random.random()
+                    if rand < 0.3: 
                         self.map[r][c] = SOFT_WALL
+                    elif rand < 0.35: 
+                        self.map[r][c] = TRAP_ICE
+                    elif rand < 0.37: 
+                        self.map[r][c] = CONVEYOR_LEFT
+                    elif rand < 0.39: 
+                        self.map[r][c] = CONVEYOR_RIGHT
                     else:
-                        empty_spaces.append((c, r)) # Lưu lại các ô trống
+                        empty_spaces.append((c, r)) 
                         
-        # 🌀 Sinh ra 2 cổng Teleport ngẫu nhiên trên bản đồ
+        # 🌀 Sinh ra 2 cổng Teleport
         if len(empty_spaces) >= 2:
             self.teleports = random.sample(empty_spaces, 2)
             for tx, ty in self.teleports:
                 self.map[ty][tx] = TRAP_TELEPORT
+
+    def move_player(self, dx, dy):
+        """Hàm helper xử lý di chuyển và va chạm"""
+        self.player_rect.x += dx
+        if self.check_collision(): self.player_rect.x -= dx
+        self.player_rect.y += dy
+        if self.check_collision(): self.player_rect.y -= dy
 
     def handle_input(self):
         if self.is_dead: return 
@@ -116,10 +135,11 @@ class Game:
         if keys[pygame.K_UP]:    dy = -self.player_current_speed
         if keys[pygame.K_DOWN]:  dy = self.player_current_speed
 
-        self.player_rect.x += dx
-        if self.check_collision(): self.player_rect.x -= dx
-        self.player_rect.y += dy
-        if self.check_collision(): self.player_rect.y -= dy
+        # Lưu lại hướng đi cuối cùng nếu có bấm phím (Dùng cho Ô Băng)
+        if dx != 0 or dy != 0:
+            self.last_dx, self.last_dy = dx, dy
+
+        self.move_player(dx, dy)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT: pygame.quit(); sys.exit()
@@ -139,8 +159,6 @@ class Game:
         for r in range(GRID_HEIGHT):
             for c in range(GRID_WIDTH):
                 tile = self.map[r][c]
-                # 👻 GHOST LOGIC: Tường cứng (WALL) luôn chặn. 
-                # Tường mềm (SOFT_WALL) chỉ chặn nếu KHÔNG PHẢI là Ghost.
                 if tile == WALL or (tile == SOFT_WALL and not self.is_ghost):
                     if self.player_rect.colliderect(pygame.Rect(c*TILE_SIZE, r*TILE_SIZE, TILE_SIZE, TILE_SIZE)):
                         return True
@@ -174,7 +192,6 @@ class Game:
                         if tile == SOFT_WALL:
                             self.map[ny][nx] = EMPTY
                             if random.random() < 0.15:
-                                # Đưa thêm GHOST vào danh sách
                                 self.powerups[(nx, ny)] = random.choice(["SPEED", "RANGE", "SHIELD", "GHOST"])
                             break 
                         if (dx, dy) == (0,0): break 
@@ -200,20 +217,40 @@ class Game:
             
         self.explosions = [e for e in self.explosions if e['expiry'] > now]
 
+        # 💥 [ĐÃ FIX]: Player chết nếu dẫm vào lửa bom
         for e in self.explosions:
             exp_rect = pygame.Rect(e['x'] * TILE_SIZE, e['y'] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             if self.player_rect.colliderect(exp_rect):
                 self.take_damage(now)
 
+        # 🧊 & ➡️ XỬ LÝ BẪY TRÊN BẢN ĐỒ
+        px_grid, py_grid = self.player_rect.centerx // TILE_SIZE, self.player_rect.centery // TILE_SIZE
+        current_tile = self.map[py_grid][px_grid]
+        keys = pygame.key.get_pressed()
+
+        # Logic Ô Băng: Trượt tiếp nếu không bấm phím
+        if current_tile == TRAP_ICE:
+            if not (keys[pygame.K_LEFT] or keys[pygame.K_RIGHT] or keys[pygame.K_UP] or keys[pygame.K_DOWN]):
+                self.move_player(self.last_dx * 0.8, self.last_dy * 0.8)
+
+        # Logic Băng Chuyền: Đưa lực đẩy vào Queue
+        if current_tile == CONVEYOR_LEFT:
+            self.forced_move_queue.append((-2, 0))
+        elif current_tile == CONVEYOR_RIGHT:
+            self.forced_move_queue.append((2, 0))
+
+        # Áp dụng lực đẩy từ Queue
+        while self.forced_move_queue:
+            fdx, fdy = self.forced_move_queue.popleft()
+            self.move_player(fdx, fdy)
+
         # 🌀 LOGIC TELEPORT
         if self.teleports and now > self.teleport_cooldown:
-            px_grid, py_grid = self.player_rect.centerx // TILE_SIZE, self.player_rect.centery // TILE_SIZE
             if (px_grid, py_grid) in self.teleports:
-                # Tìm cổng còn lại
                 other_portal = self.teleports[1] if (px_grid, py_grid) == self.teleports[0] else self.teleports[0]
                 self.player_rect.x = other_portal[0] * TILE_SIZE + 5
                 self.player_rect.y = other_portal[1] * TILE_SIZE + 5
-                self.teleport_cooldown = now + 1000 # Cooldown 1s để không bị nhảy liên tục
+                self.teleport_cooldown = now + 1000 
                 print("🌀 Dịch chuyển tức thời!")
 
         # DSA: Min-Heap
@@ -224,17 +261,14 @@ class Game:
             if effect == "RESET_GHOST": 
                 self.is_ghost = False
                 print("👻 Hết chế độ GHOST!")
-                # KỊCH TÍNH: Nếu hết Ghost mà đang kẹt trong tường -> Chết luôn!
-                px, py = self.player_rect.centerx // TILE_SIZE, self.player_rect.centery // TILE_SIZE
-                if self.map[py][px] == SOFT_WALL:
-                    self.invulnerable_until = 0 # Xóa I-frames
+                if self.map[py_grid][px_grid] == SOFT_WALL:
+                    self.invulnerable_until = 0 
                     self.take_damage(now)
                     print("💀 Bị kẹt chết trong tường!")
 
         # 🎁 NHẶT ITEM
-        px, py = self.player_rect.centerx // TILE_SIZE, self.player_rect.centery // TILE_SIZE
-        if (px, py) in self.powerups:
-            p_type = self.powerups.pop((px, py))
+        if (px_grid, py_grid) in self.powerups:
+            p_type = self.powerups.pop((px_grid, py_grid))
             if p_type == "SPEED":
                 self.player_current_speed = 5
                 heapq.heappush(self.active_effects, (now + 5000, "RESET_SPEED"))
@@ -246,11 +280,11 @@ class Game:
             elif p_type == "GHOST":
                 self.is_ghost = True
                 heapq.heappush(self.active_effects, (now + 8000, "RESET_GHOST"))
-                print("👻 Chế độ GHOST: Đi xuyên tường mềm (8 giây)!")
+                print("👻 Chế độ GHOST (8 giây)!")
 
         # 👾 ENEMY AI & VA CHẠM
         for enemy in self.enemies:
-            path = enemy.find_path(px, py, self.map)
+            path = enemy.find_path(px_grid, py_grid, self.map)
             if path: enemy.move()
             if self.player_rect.colliderect(enemy.rect): 
                 self.take_damage(now)
@@ -260,13 +294,23 @@ class Game:
         for r in range(GRID_HEIGHT):
             for c in range(GRID_WIDTH):
                 rect = (c*TILE_SIZE, r*TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                if self.map[r][c] == WALL: pygame.draw.rect(self.screen, GRAY, rect)
-                elif self.map[r][c] == SOFT_WALL: 
-                    # 👻 Nếu đang là Ghost, vẽ tường mềm mờ đi một chút để dễ nhìn
+                tile = self.map[r][c]
+                
+                if tile == WALL: 
+                    pygame.draw.rect(self.screen, GRAY, rect)
+                elif tile == SOFT_WALL: 
                     color = (139, 69, 19) if not self.is_ghost else (100, 50, 10)
                     pygame.draw.rect(self.screen, color, rect)
-                elif self.map[r][c] == TRAP_TELEPORT:
-                    # 🌀 Vẽ cổng Teleport (Màu Magenta, hình xoắn ốc/vòng tròn nhỏ)
+                elif tile == TRAP_ICE:
+                    pygame.draw.rect(self.screen, LIGHT_BLUE_ICE, rect)
+                elif tile in [CONVEYOR_LEFT, CONVEYOR_RIGHT]:
+                    pygame.draw.rect(self.screen, DARK_GRAY, rect)
+                    # Vẽ mũi tên định hướng cho Băng chuyền
+                    arrow = "<" if tile == CONVEYOR_LEFT else ">"
+                    font = pygame.font.SysFont("Arial", 20, bold=True)
+                    text = font.render(arrow, True, WHITE)
+                    self.screen.blit(text, (c*TILE_SIZE + 15, r*TILE_SIZE + 8))
+                elif tile == TRAP_TELEPORT:
                     pygame.draw.circle(self.screen, MAGENTA, (c*TILE_SIZE + 20, r*TILE_SIZE + 20), 12, 4)
         
         if self.show_visualization:
@@ -280,7 +324,7 @@ class Game:
             if p_type == "SPEED": color = LIGHT_BLUE
             elif p_type == "RANGE": color = YELLOW
             elif p_type == "SHIELD": color = CYAN 
-            else: color = PURPLE # GHOST màu Tím
+            else: color = PURPLE 
             pygame.draw.rect(self.screen, color, (gx*TILE_SIZE+12, gy*TILE_SIZE+12, 16, 16))
 
         for e in self.explosions:
@@ -294,7 +338,6 @@ class Game:
         
         if not self.is_dead:
             if not is_invulnerable or (now // 100) % 2 == 0:
-                # 👻 Đổi màu nhân vật nếu đang là Ghost
                 player_color = PURPLE if self.is_ghost else BLUE
                 pygame.draw.rect(self.screen, player_color, self.player_rect)
             
@@ -318,4 +361,3 @@ if __name__ == "__main__":
     while True:
         game.handle_input(); game.update(); game.draw()
         game.clock.tick(FPS)
-        
