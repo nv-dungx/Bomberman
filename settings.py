@@ -100,7 +100,7 @@ TRAP_ICE: int = 4
 CONVEYOR_LEFT: int = 5
 """Băng tải trái — đẩy nhân vật sang trái."""
 
-CONVEYOR_RIGHT: int = 5
+CONVEYOR_RIGHT: int = 6
 """Băng tải phải — đẩy nhân vật sang phải.
 
 Note:
