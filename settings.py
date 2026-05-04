@@ -21,10 +21,10 @@ GRID_HEIGHT: int = 15
 """Số hàng của lưới bản đồ."""
 
 SCREEN_WIDTH: int = TILE_SIZE * GRID_WIDTH
-"""Chiều rộng cửa sổ game (pixel), bằng TILE_SIZE × GRID_WIDTH."""
+"""Chiều rộng cửa sổ game (pixel), bằng TILE_SIZE x GRID_WIDTH."""
 
 SCREEN_HEIGHT: int = TILE_SIZE * GRID_HEIGHT
-"""Chiều cao cửa sổ game (pixel), bằng TILE_SIZE × GRID_HEIGHT."""
+"""Chiều cao cửa sổ game (pixel), bằng TILE_SIZE x GRID_HEIGHT."""
 
 FPS: int = 60
 """Số khung hình tối đa mỗi giây."""

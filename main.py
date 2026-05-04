@@ -79,7 +79,6 @@ class Game:
         self.last_dx, self.last_dy = 0, 0
         self.is_dead = False
 
-        # 🛡️ DSA Structures
         self.shields = []                 # Stack quản lý Khiên
         self.invulnerable_until = 0
         self.is_ghost = False
@@ -108,7 +107,7 @@ class Game:
         Quy tắc sinh bản đồ:
 
         - Viền ngoài và các ô chẵn-chẵn ``(r%2==0, c%2==0)`` luôn là ``WALL``.
-        - Vùng 3×3 góc trên-trái được giữ trống để người chơi spawn an toàn.
+        - Vùng 3x3 góc trên-trái được giữ trống để người chơi spawn an toàn.
         - Các ô còn lại có xác suất ngẫu nhiên trở thành ``SOFT_WALL``,
           ``TRAP_ICE``, ``CONVEYOR_LEFT``, ``CONVEYOR_RIGHT`` hoặc ``EMPTY``.
         - Sau khi sinh xong, chọn ngẫu nhiên 2 ô trống và đặt cổng ``TRAP_TELEPORT``.
@@ -293,10 +292,10 @@ class Game:
         if self.shields:
             self.shields.pop()
             self.invulnerable_until = now + 1500
-            print(f"🛡️ Bể Khiên! Còn {len(self.shields)} lớp.")
+            print(f"Bể Khiên. Còn {len(self.shields)} lớp.")
         else:
             self.is_dead = True
-            print("💥 BẠN ĐÃ CHẾT!")
+            print("BẠN ĐÃ CHẾT!")
 
     def update(self) -> None:
         """Cập nhật toàn bộ trạng thái game cho một frame.
@@ -327,7 +326,7 @@ class Game:
             self.handle_explosion(b['x'], b['y'])
         self.explosions = [e for e in self.explosions if e['expiry'] > now]
 
-        # 💥 2. XỬ LÝ VA CHẠM VỚI TIA LỬA (Pixel-perfect)
+        # 2. XỬ LÝ VA CHẠM VỚI TIA LỬA (Pixel-perfect)
         for e in self.explosions:
             exp_rect = pygame.Rect(e['x'] * TILE_SIZE, e['y'] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             if self.player_rect.colliderect(exp_rect):
@@ -343,12 +342,12 @@ class Game:
         current_tile = self.map[py_grid][px_grid]
         keys = pygame.key.get_pressed()
 
-        # 🧊 Ô Băng
+        # Ô Băng
         if current_tile == TRAP_ICE:
             if not any(keys[k] for k in [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN]):
                 self.move_player(self.last_dx * 0.8, self.last_dy * 0.8)
 
-        # ➡️ Băng Chuyền
+        # Băng Chuyền
         if current_tile == CONVEYOR_LEFT:
             self.forced_move_queue.append((-2, 0))
         elif current_tile == CONVEYOR_RIGHT:
@@ -358,7 +357,7 @@ class Game:
             fdx, fdy = self.forced_move_queue.popleft()
             self.move_player(fdx, fdy)
 
-        # 🌀 Teleport
+        # Teleport
         if (self.teleports
                 and now > self.teleport_cooldown
                 and (px_grid, py_grid) in self.teleports):
@@ -385,7 +384,7 @@ class Game:
                 if self.map[py_grid][px_grid] == SOFT_WALL:
                     self.take_damage(now)
 
-        # 🎁 Nhặt Item
+        # Nhặt Item
         if (px_grid, py_grid) in self.powerups:
             p_type = self.powerups.pop((px_grid, py_grid))
             if p_type == "SPEED":
@@ -400,7 +399,7 @@ class Game:
                 self.is_ghost = True
                 heapq.heappush(self.active_effects, (now + 8000, "RESET_GHOST"))
 
-        # 👾 Enemy AI & Va chạm vật lý với người
+        # Enemy AI & Va chạm vật lý với người
         for enemy in self.enemies:
             path = enemy.find_path(px_grid, py_grid, self.map, self.bomb_queue, self.explosion_range, now)
             if path:
