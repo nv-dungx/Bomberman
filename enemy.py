@@ -1,6 +1,5 @@
 """
 enemy.py
---------
 Module định nghĩa các lớp AI kẻ địch cho game Bomberman.
 
 Module cung cấp lớp nền :class:`Enemy` và ba tier con:

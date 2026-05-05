@@ -1,6 +1,5 @@
 ﻿"""
 player.py
----------
 Module định nghĩa thực thể người chơi trong game Bomberman.
 
 Player xử lý di chuyển, va chạm, quản lý mạng, khiên, hiệu ứng item, và

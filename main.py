@@ -1,6 +1,5 @@
 """
 main.py
--------
 Entry point cho game Bomberman.
 
 Module này quản lý vòng lặp chính, trạng thái game, đầu vào người chơi,
@@ -25,9 +24,7 @@ from settings import *
 from player import Player
 from level_manager import LevelManager
 
-# ---------------------------------------------------------------------------
 # Hằng số FSM — trạng thái game
-# ---------------------------------------------------------------------------
 
 STATE_MENU       = 0
 """int: Màn hình menu chính."""
@@ -110,9 +107,7 @@ class Game:
         self.player1 = None
         self.player2 = None
 
-    # ------------------------------------------------------------------
     # Checkpoint (Save / Load)
-    # ------------------------------------------------------------------
 
     def load_progress(self) -> dict:
         """Đọc file ``savegame.json`` và trả về dữ liệu checkpoint.
@@ -154,9 +149,7 @@ class Game:
         except Exception as e:
             print(f"Lỗi ghi save: {e}")
 
-    # ------------------------------------------------------------------
     # Khởi tạo màn chơi
-    # ------------------------------------------------------------------
 
     def load_level(self) -> None:
         """Khởi tạo màn chơi mới và sinh các đối tượng game cần thiết.
@@ -217,9 +210,7 @@ class Game:
         self.state = STATE_TRANSITION
         self.transition_timer = pygame.time.get_ticks() + 2000
 
-    # ------------------------------------------------------------------
     # Input
-    # ------------------------------------------------------------------
 
     def handle_input(self) -> None:
         """Xử lý đầu vào phím và cập nhật trạng thái game tương ứng.
@@ -322,9 +313,7 @@ class Game:
                     self.player2.last_dx, self.player2.last_dy = dx2, dy2
                 self.player2.move(dx2, dy2, self.level_manager.map)
 
-    # ------------------------------------------------------------------
     # Explosion
-    # ------------------------------------------------------------------
 
     def handle_explosion(self, start_x: int, start_y: int, exp_range: int) -> None:
         """Xử lý lan truyền vụ nổ và kích hoạt chuỗi bom (chain explosion).
@@ -376,9 +365,7 @@ class Game:
                         if (dx, dy) == (0, 0):
                             break
 
-    # ------------------------------------------------------------------
     # Update
-    # ------------------------------------------------------------------
 
     def update(self) -> None:
         """Cập nhật toàn bộ trạng thái game mỗi khung hình.
@@ -566,9 +553,7 @@ class Game:
             if self.player1.rect.colliderect(enemy.rect):
                 self.player1.take_damage(now)
 
-    # ------------------------------------------------------------------
     # Draw
-    # ------------------------------------------------------------------
 
     def draw(self) -> None:
         """Render toàn bộ nội dung game lên màn hình mỗi frame.
