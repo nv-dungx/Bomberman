@@ -9,11 +9,12 @@ from collections import deque
 from settings import *
 
 class Player:
-    def __init__(self, x, y):
+    def __init__(self, x, y, lives = 1):
         self.rect = pygame.Rect(x, y, PLAYER_WIDTH, PLAYER_HEIGHT)
         self.current_speed = PLAYER_SPEED
         self.last_dx, self.last_dy = 0, 0
         self.is_dead = False
+        self.lives = lives  # 💖 Khởi tạo 3 mạng
         self.shields = []
         self.invulnerable_until = 0
         self.is_ghost = False
@@ -23,39 +24,39 @@ class Player:
         self.teleport_cooldown = 0
         
     def move(self, dx, dy, game_map):
-        """Di chuyển nhân vật và xử lý va chạm với tường."""
         self.rect.x += dx
-        if self.check_collision(game_map):
-            self.rect.x -= dx
+        if self.check_collision(game_map): self.rect.x -= dx
         self.rect.y += dy
-        if self.check_collision(game_map):
-            self.rect.y -= dy
+        if self.check_collision(game_map): self.rect.y -= dy
 
     def check_collision(self, game_map):
-        """Kiểm tra xem rect có đè lên tường/tường mềm không."""
         for r in range(GRID_HEIGHT):
             for c in range(GRID_WIDTH):
                 tile = game_map[r][c]
                 if tile == WALL or (tile == SOFT_WALL and not self.is_ghost):
                     tile_rect = pygame.Rect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                    if self.rect.colliderect(tile_rect):
-                        return True
+                    if self.rect.colliderect(tile_rect): return True
         return False
         
     def take_damage(self, now):
         """Xử lý trừ máu, vỡ khiên hoặc chết."""
         if now < self.invulnerable_until:
-            return
+            return # Đang trong thời gian bất tử thì không nhận sát thương
+            
         if self.shields:
             self.shields.pop()
-            self.invulnerable_until = now + 1500
+            self.invulnerable_until = now + 1500 # Bất tử 1.5s sau khi vỡ khiên
             print(f"🛡️ Bể Khiên! Còn {len(self.shields)} lớp.")
         else:
-            self.is_dead = True
-            print("💥 BẠN ĐÃ CHẾT!")
+            self.lives -= 1
+            if self.lives <= 0:
+                self.is_dead = True
+                print("💥 BẠN ĐÃ CHẾT!")
+            else:
+                self.invulnerable_until = now + 1500 # Nhấp nháy bất tử 1.5s để chạy trốn
+                print(f"💔 Trúng bom! Còn {self.lives} mạng.")
 
     def update_items(self, now, current_tile):
-        """Kiểm tra thời hạn của các item đang kích hoạt thông qua Min-Heap."""
         while self.active_effects and self.active_effects[0][0] <= now:
             _, effect = heapq.heappop(self.active_effects)
             if effect == "RESET_SPEED": self.current_speed = PLAYER_SPEED
@@ -65,7 +66,6 @@ class Player:
                 if current_tile == SOFT_WALL: self.take_damage(now)
 
     def pick_up_item(self, p_type, now):
-        """Nhặt item và đưa vào Min-Heap đếm ngược."""
         if p_type == "SPEED":
             self.current_speed = 5
             heapq.heappush(self.active_effects, (now + 5000, "RESET_SPEED"))
@@ -79,11 +79,10 @@ class Player:
             heapq.heappush(self.active_effects, (now + 8000, "RESET_GHOST"))
 
     def draw(self, screen, now):
-        """Vẽ người chơi và hiệu ứng khiên/nhấp nháy."""
         if self.is_dead: return
         is_invulnerable = now < self.invulnerable_until
         
-        # Nhấp nháy khi đang vô địch (i-frame)
+        # Nhấp nháy khi đang vô địch (i-frame) sau khi trúng bom
         if not is_invulnerable or (now // 100) % 2 == 0:
             color = PURPLE if self.is_ghost else BLUE
             pygame.draw.rect(screen, color, self.rect)

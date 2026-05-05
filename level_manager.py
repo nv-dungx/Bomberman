@@ -104,3 +104,28 @@ class LevelManager:
                 else:
                     if i % 2 == 0: self.enemies.append(EliteEnemy(ex, ey))
                     else: self.enemies.append(SmartEnemy(ex, ey))
+    def generate_pvp_level(self):
+        """Tạo bản đồ đối kháng: Không quái, không cửa, 2 vùng an toàn đối xứng."""
+        self.map = [[EMPTY for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+        self.teleports = []
+        self.door_pos = None
+        self.enemies = []
+        self.powerups = {}
+        
+        for r in range(GRID_HEIGHT):
+            for c in range(GRID_WIDTH):
+                if r == 0 or r == GRID_HEIGHT - 1 or c == 0 or c == GRID_WIDTH - 1:
+                    self.map[r][c] = WALL
+                elif r % 2 == 0 and c % 2 == 0:
+                    self.map[r][c] = WALL
+                else:
+                    # Vùng an toàn cho Player 1 (Góc trên trái)
+                    if r <= 2 and c <= 2:
+                        continue
+                    # Vùng an toàn cho Player 2 (Góc dưới phải)
+                    if r >= GRID_HEIGHT - 3 and c >= GRID_WIDTH - 3:
+                        continue
+                    
+                    rand = random.random()
+                    if rand < 0.40: # Rải nhiều tường mềm hơn Campaign để anh em đào hầm
+                        self.map[r][c] = SOFT_WALL
