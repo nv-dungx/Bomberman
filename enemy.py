@@ -20,8 +20,18 @@ class Enemy:
         self.path = []
         self.reaction_delay = 1200
 
-    def move(self):
-        """Di chuyển mượt mà theo pixel bám theo đường path đã tính."""
+    def check_collision(self, game_map):
+        """Kiểm tra va chạm vật lý với tường cứng và tường mềm."""
+        for r in range(GRID_HEIGHT):
+            for c in range(GRID_WIDTH):
+                if game_map[r][c] in [WALL, SOFT_WALL]:
+                    tile_rect = pygame.Rect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                    if self.rect.colliderect(tile_rect):
+                        return True
+        return False
+
+    def move(self, game_map):
+        """Di chuyển có check va chạm (Hitbox) để không bị xuyên tường khi cắt góc."""
         if not self.path: return
         next_step = self.path[0]
         target_x = next_step[0] * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) // 2
@@ -30,12 +40,23 @@ class Enemy:
         dx = target_x - self.rect.x
         dy = target_y - self.rect.y
 
-        if dx > 0: self.rect.x += min(self.speed, dx)
-        elif dx < 0: self.rect.x -= min(self.speed, -dx)
-        if dy > 0: self.rect.y += min(self.speed, dy)
-        elif dy < 0: self.rect.y -= min(self.speed, -dy)
+        # Tách riêng X và Y để check va chạm độc lập (Giúp quái trượt dọc theo tường)
+        if dx != 0:
+            step_x = min(self.speed, abs(dx)) if dx > 0 else -min(self.speed, abs(dx))
+            self.rect.x += step_x
+            if self.check_collision(game_map):
+                self.rect.x -= step_x # Đụng tường thì dội lại
+        
+        if dy != 0:
+            step_y = min(self.speed, abs(dy)) if dy > 0 else -min(self.speed, abs(dy))
+            self.rect.y += step_y
+            if self.check_collision(game_map):
+                self.rect.y -= step_y # Đụng tường thì dội lại
 
-        if self.rect.x == target_x and self.rect.y == target_y:
+        # Nếu đã lọt vào tâm lưới (cho phép sai số nhỏ để tránh kẹt pixel)
+        if abs(self.rect.x - target_x) <= self.speed and abs(self.rect.y - target_y) <= self.speed:
+            self.rect.x = target_x
+            self.rect.y = target_y
             self.path.pop(0)
 
     def get_danger_zones(self, bomb_queue, explosion_range, now, game_map):

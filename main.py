@@ -212,32 +212,29 @@ class Game:
 
         # 5. AI Kẻ địch & Vật lý môi trường cho quái
         for enemy in self.level_manager.enemies:
-            # Lấy tọa độ lưới của quái
             ex_grid = enemy.rect.centerx // TILE_SIZE
             ey_grid = enemy.rect.centery // TILE_SIZE
             
-            # Kiểm tra xem quái có bị out of bounds không (phòng hờ)
             if 0 <= ex_grid < GRID_WIDTH and 0 <= ey_grid < GRID_HEIGHT:
                 e_tile = self.level_manager.map[ey_grid][ex_grid]
                 
-                # Áp dụng lực đẩy của băng chuyền lên quái
+                # Áp dụng lực đẩy và CHECK VA CHẠM khi bị đẩy
                 if e_tile == CONVEYOR_LEFT:
                     enemy.rect.x -= 2
-                    enemy.path = [] # Bị đẩy lệch -> Phải xóa đường đi cũ
+                    if enemy.check_collision(self.level_manager.map):
+                        enemy.rect.x += 2 # Kẹt tường thì dội lại, không bị xuyên
+                    enemy.path = [] 
                 elif e_tile == CONVEYOR_RIGHT:
                     enemy.rect.x += 2
-                    enemy.path = [] # Bị đẩy lệch -> Phải xóa đường đi cũ
-                    
-                # (Lưu ý: Bọn quái không đi giày nên tớ cho chúng nó miễn nhiễm bẫy Băng (TRAP_ICE) 
-                # để đỡ bị trượt loạn xạ làm kẹt AI. Coi như đặc quyền của quái vật bản địa nhé!)
+                    if enemy.check_collision(self.level_manager.map):
+                        enemy.rect.x -= 2 # Kẹt tường thì dội lại, không bị xuyên
+                    enemy.path = [] 
 
-            # Gọi não bộ (AI) tìm đường
             path = enemy.find_path(px_grid, py_grid, self.level_manager.map, self.bomb_queue, self.player.explosion_range, now)
             
             if path: 
-                enemy.move()
+                enemy.move(self.level_manager.map) # BẮT BUỘC TRUYỀN GAME MAP VÀO ĐÂY
                 
-            # Kiểm tra va chạm gây sát thương cho người chơi
             if self.player.rect.colliderect(enemy.rect):
                 self.player.take_damage(now)
 

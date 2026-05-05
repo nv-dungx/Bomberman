@@ -88,7 +88,7 @@ class LevelManager:
         num_enemies = 2 + level_num
         safe_spawn_spaces = [
             (x, y) for (x, y) in empty_spaces 
-            if abs(x - 1) + abs(y - 1) >= 6
+            if abs(x - 1) + abs(y - 1) >= 8
         ]
         target_spaces = safe_spawn_spaces if len(safe_spawn_spaces) >= num_enemies else empty_spaces
 
