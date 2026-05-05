@@ -2,7 +2,7 @@
 main.py
 -------
 Điểm khởi chạy chính, quản lý Game Engine, vòng lặp sự kiện và điều phối các module.
-Tích hợp Finite State Machine (FSM) để quản lý luồng game: Menu, Chuyển cảnh, Chơi, Game Over, Phá đảo.
+Tích hợp Finite State Machine (FSM) và hệ thống Lưu Tiến Trình (Save Progress).
 """
 import pygame
 import sys
@@ -25,11 +25,12 @@ class Game:
     def __init__(self):
         pygame.init()
         self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
-        pygame.display.set_caption("Bomberman DSA - Campaign Mode")
+        pygame.display.set_caption("Bomberman DSA - Campaign & PvP")
         self.clock = pygame.time.Clock()
         self.show_visualization = False 
         
         self.state = STATE_MENU
+        self.saved_level = 1  # 💾 Biến lưu trữ tiến trình chiến dịch
         self.level = 1
         self.transition_timer = 0
         
@@ -43,11 +44,13 @@ class Game:
         self.explosions = []
         self.level_manager.generate_level(self.level)
 
-    def start_campaign(self):
-        """Bắt đầu chiến dịch từ Màn 1."""
-        self.level = 1
+    def start_campaign(self, is_new_game=False):
+        """Bắt đầu chiến dịch. Cập nhật level dựa trên lựa chọn Chơi mới / Chơi tiếp."""
+        if is_new_game:
+            self.saved_level = 1
+        self.level = self.saved_level
         self.state = STATE_TRANSITION
-        self.transition_timer = pygame.time.get_ticks() + 2500 # Đợi 2.5 giây
+        self.transition_timer = pygame.time.get_ticks() + 2500
 
     def handle_input(self):
         """Bắt sự kiện phím điều hướng, đặt bom và xử lý Event Loop theo State."""
@@ -56,15 +59,34 @@ class Game:
                 pygame.quit()
                 sys.exit()
                 
-            # Xử lý input ở Menu và Màn hình kết thúc
+            # 🖥️ XỬ LÝ MENU CHÍNH
             if self.state == STATE_MENU:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_RETURN:
-                    self.start_campaign()
-            elif self.state in [STATE_GAMEOVER, STATE_VICTORY]:
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_r:
-                    self.state = STATE_MENU
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_1:
+                        print("Chế độ PvP 2 Người chơi đang được xây dựng!") # Chừa chỗ cho PvP
+                    elif event.key == pygame.K_2:
+                        self.start_campaign(is_new_game=True)  # Chơi mới lại từ đầu
+                    elif event.key == pygame.K_3 and self.saved_level > 1:
+                        self.start_campaign(is_new_game=False) # Tiếp tục (chỉ chạy khi đã qua màn 1)
+
+            # 💀 XỬ LÝ GAME OVER
+            elif self.state == STATE_GAMEOVER:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_r:
+                        # Bấm R: Chơi lại đúng cái level đang lưu
+                        self.start_campaign(is_new_game=False)
+                    elif event.key == pygame.K_m:
+                        # Bấm M: Về Menu chính
+                        self.state = STATE_MENU
+
+            # 🏆 XỬ LÝ PHÁ ĐẢO (VICTORY)
+            elif self.state == STATE_VICTORY:
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_m:
+                        self.saved_level = 1 # Phá đảo xong reset save về 1
+                        self.state = STATE_MENU
                     
-            # Xử lý input khi đang chơi (PLAYING)
+            # 🎮 XỬ LÝ KHI ĐANG CHƠI (PLAYING)
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
@@ -199,9 +221,8 @@ class Game:
                 if self.level >= MAX_LEVEL:
                     self.state = STATE_VICTORY
                 else:
-                    self.level += 1
-                    self.state = STATE_TRANSITION
-                    self.transition_timer = now + 2500
+                    self.saved_level += 1 # 💾 Lưu tiến trình mốc mới!
+                    self.start_campaign(is_new_game=False)
                 return
 
         # 4. Item
@@ -218,37 +239,52 @@ class Game:
             if 0 <= ex_grid < GRID_WIDTH and 0 <= ey_grid < GRID_HEIGHT:
                 e_tile = self.level_manager.map[ey_grid][ex_grid]
                 
-                # Áp dụng lực đẩy và CHECK VA CHẠM khi bị đẩy
                 if e_tile == CONVEYOR_LEFT:
                     enemy.rect.x -= 2
                     if enemy.check_collision(self.level_manager.map):
-                        enemy.rect.x += 2 # Kẹt tường thì dội lại, không bị xuyên
+                        enemy.rect.x += 2 
                     enemy.path = [] 
                 elif e_tile == CONVEYOR_RIGHT:
                     enemy.rect.x += 2
                     if enemy.check_collision(self.level_manager.map):
-                        enemy.rect.x -= 2 # Kẹt tường thì dội lại, không bị xuyên
+                        enemy.rect.x -= 2 
                     enemy.path = [] 
 
             path = enemy.find_path(px_grid, py_grid, self.level_manager.map, self.bomb_queue, self.player.explosion_range, now)
             
             if path: 
-                enemy.move(self.level_manager.map) # BẮT BUỘC TRUYỀN GAME MAP VÀO ĐÂY
+                enemy.move(self.level_manager.map)
                 
             if self.player.rect.colliderect(enemy.rect):
                 self.player.take_damage(now)
+
 
     def draw(self):
         """Vẽ UI và Game tùy thuộc vào State hiện tại."""
         self.screen.fill(BLACK)
         
+        # 🖥️ VẼ MENU
         if self.state == STATE_MENU:
             font_title = pygame.font.SysFont("Arial", 64, bold=True)
-            font_sub = pygame.font.SysFont("Arial", 32)
+            font_opt = pygame.font.SysFont("Arial", 32)
+            font_sub = pygame.font.SysFont("Arial", 24, italic=True)
+            
             title = font_title.render("BOMBERMAN DSA", True, WHITE)
-            sub = font_sub.render("Press ENTER to Start Campaign", True, YELLOW)
-            self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50)))
-            self.screen.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 50)))
+            self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120)))
+            
+            opt1 = font_opt.render("[1] PvP Mode (Coming Soon)", True, WHITE)
+            opt2 = font_opt.render("[2] New Campaign", True, WHITE)
+            
+            self.screen.blit(opt1, opt1.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
+            self.screen.blit(opt2, opt2.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
+            
+            # Chỉ hiển thị mục [3] nếu người chơi đã qua được Level 1
+            if self.saved_level > 1:
+                opt3 = font_opt.render(f"[3] Continue Campaign (Level {self.saved_level})", True, YELLOW)
+                self.screen.blit(opt3, opt3.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)))
+            
+            hint = font_sub.render("Press number keys to select", True, LIGHT_BLUE)
+            self.screen.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 160)))
             
         elif self.state == STATE_TRANSITION:
             font_level = pygame.font.SysFont("Arial", 72, bold=True)
@@ -305,18 +341,22 @@ class Game:
             font = pygame.font.SysFont("Arial", 24, bold=True)
             self.screen.blit(font.render(f"Level: {self.level}", True, WHITE), (SCREEN_WIDTH - 100, 10))
 
-            # Overlay Màn hình kết thúc
+            # 💀 Overlay Màn hình GAME OVER
             if self.state == STATE_GAMEOVER:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 180))
                 self.screen.blit(overlay, (0, 0))
                 font_go = pygame.font.SysFont("Arial", 72, bold=True)
-                font_r = pygame.font.SysFont("Arial", 32)
+                font_opt = pygame.font.SysFont("Arial", 32)
                 text = font_go.render("GAME OVER", True, RED)
-                sub = font_r.render("Press R to Restart", True, WHITE)
-                self.screen.blit(text, text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30)))
-                self.screen.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40)))
+                opt_r = font_opt.render("Press [R] to Restart Level", True, WHITE)
+                opt_m = font_opt.render("Press [M] to return to Menu", True, LIGHT_BLUE)
                 
+                self.screen.blit(text, text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 50)))
+                self.screen.blit(opt_r, opt_r.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
+                self.screen.blit(opt_m, opt_m.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)))
+                
+            # 🏆 Overlay Màn hình VICTORY
             elif self.state == STATE_VICTORY:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 180))
@@ -324,7 +364,7 @@ class Game:
                 font_vic = pygame.font.SysFont("Arial", 72, bold=True)
                 font_r = pygame.font.SysFont("Arial", 32)
                 text = font_vic.render("VICTORY! CAMPAIGN COMPLETED!", True, GOLD)
-                sub = font_r.render("Press R to return to Menu", True, WHITE)
+                sub = font_r.render("Press [M] to return to Menu", True, WHITE)
                 self.screen.blit(text, text.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30)))
                 self.screen.blit(sub, sub.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 40)))
 
