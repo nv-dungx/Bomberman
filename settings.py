@@ -103,12 +103,7 @@ CONVEYOR_LEFT: int = 5
 """Băng tải trái — đẩy nhân vật sang trái."""
 
 CONVEYOR_RIGHT: int = 6
-"""Băng tải phải — đẩy nhân vật sang phải.
-
-Note:
-    Hiện tại CONVEYOR_LEFT và CONVEYOR_RIGHT dùng chung giá trị ``5``.
-    Cần phân biệt thành hai giá trị riêng nếu muốn xử lý hai chiều độc lập.
-"""
+"""Băng tải phải — đẩy nhân vật sang phải."""
 
 # ---------------------------------------------------------------------------
 # 4. Thông số thực thể
