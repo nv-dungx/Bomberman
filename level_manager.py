@@ -5,7 +5,7 @@ Quản lý việc sinh bản đồ, bẫy vật lý, vật phẩm rớt ra và t
 """
 import random
 from settings import *
-from enemy import Enemy
+from enemy import DumbEnemy, SmartEnemy, EliteEnemy
 
 class LevelManager:
     def __init__(self):
@@ -81,22 +81,26 @@ class LevelManager:
                 self.map[ty][tx] = TRAP_TELEPORT
                 empty_spaces.remove((tx, ty))
 
-        # 4. Giấu Cửa & Sinh Quái (Có chống Spawn Kill)
+        # 4. Giấu Cửa & Sinh Quái theo cấp độ (Có chống Spawn Kill)
         if soft_walls_list:
             self.door_pos = random.choice(soft_walls_list)
 
         num_enemies = 2 + level_num
-        
-        # Lọc ra các ô trống thỏa mãn Khoảng cách Manhattan >= 6 so với ô (1, 1)
         safe_spawn_spaces = [
             (x, y) for (x, y) in empty_spaces 
             if abs(x - 1) + abs(y - 1) >= 6
         ]
-        
-        # Nếu vì lý do nào đó map quá kẹt không đủ ô an toàn, fallback về dùng mọi ô trống
         target_spaces = safe_spawn_spaces if len(safe_spawn_spaces) >= num_enemies else empty_spaces
 
         if len(target_spaces) >= num_enemies:
             enemy_spawns = random.sample(target_spaces, num_enemies)
-            for ex, ey in enemy_spawns:
-                self.enemies.append(Enemy(ex, ey))
+            for i, (ex, ey) in enumerate(enemy_spawns):
+                # Level 1-2: Quái Ngu. Level 3-4: Trộn Ngu và Khôn. Level 5: Toàn Tinh Anh.
+                if level_num <= 2:
+                    self.enemies.append(DumbEnemy(ex, ey))
+                elif level_num <= 4:
+                    if i % 2 == 0: self.enemies.append(SmartEnemy(ex, ey))
+                    else: self.enemies.append(DumbEnemy(ex, ey))
+                else:
+                    if i % 2 == 0: self.enemies.append(EliteEnemy(ex, ey))
+                    else: self.enemies.append(SmartEnemy(ex, ey))

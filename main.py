@@ -229,7 +229,7 @@ class Game:
 
         # Vẽ Quái và Người chơi
         for enemy in self.level_manager.enemies:
-            pygame.draw.rect(self.screen, GREEN, enemy.rect)
+            pygame.draw.rect(self.screen, enemy.color, enemy.rect)
         self.player.draw(self.screen, pygame.time.get_ticks())
 
         # Vẽ UI
