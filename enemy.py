@@ -15,6 +15,7 @@ import pygame
 import heapq
 from collections import deque
 from settings import *
+from asset_loader import AssetLoader
 
 
 class Enemy:
@@ -35,14 +36,15 @@ class Enemy:
             "phản xạ chậm" để cân bằng độ khó).
     """
 
-    def __init__(self, grid_x: int, grid_y: int, speed: int, color: tuple):
-        """Khởi tạo kẻ địch tại ô lưới (grid_x, grid_y).
+    def __init__(self, grid_x: int, grid_y: int, speed: int, color: tuple, enemy_model: str = "enemy_dumb"):
+        """Khởi tạo kẻ địch tại ô lưới (grid_x, grid_y) và nạp hoạt ảnh.
 
         Args:
             grid_x (int): Tọa độ cột trên lưới.
             grid_y (int): Tọa độ hàng trên lưới.
             speed (int): Tốc độ di chuyển (pixel/frame).
-            color (tuple[int, int, int]): Màu RGB để vẽ.
+            color (tuple[int, int, int]): Màu RGB để vẽ (dùng làm fallback).
+            enemy_model (str): Tên file spritesheet trong assets/images/.
         """
         self.rect = pygame.Rect(
             grid_x * TILE_SIZE + 5,
@@ -53,6 +55,29 @@ class Enemy:
         self.color = color
         self.path: list[tuple[int, int]] = []
         self.reaction_delay = 1200
+
+        # --- Hệ thống hoạt ảnh ---
+        self.direction = "down"
+        self.frame_index = 0
+        self.animation_timer = 0
+        self.is_moving = False
+        
+        # Lưu tọa độ cũ để tự động suy ra hướng đi
+        self.last_x = self.rect.x
+        self.last_y = self.rect.y
+
+        # Nạp dải ảnh 9 frames
+        frames = AssetLoader.load_sprite_sheet(f"{enemy_model}.png", 30, 30, 9)
+        if frames and len(frames) >= 9:
+            self.frames_down = frames[0:3]
+            self.frames_right = frames[3:6]
+            self.frames_up = frames[6:9]
+            self.frames_left = [pygame.transform.flip(f, True, False) for f in self.frames_right]
+        else:
+            # Fallback nếu lỗi ảnh
+            surf = pygame.Surface((PLAYER_WIDTH, PLAYER_HEIGHT))
+            surf.fill(self.color)
+            self.frames_down = self.frames_up = self.frames_left = self.frames_right = [surf] * 3
 
     def check_collision(self, game_map: list[list[int]]) -> bool:
         """Kiểm tra va chạm pixel-perfect giữa ``rect`` và tường.
@@ -114,6 +139,41 @@ class Enemy:
             self.rect.x = target_x
             self.rect.y = target_y
             self.path.pop(0)
+
+    def draw(self, screen: pygame.Surface, now: int) -> None:
+        """Tính toán hướng đi và vẽ hoạt ảnh kẻ địch lên màn hình."""
+        # 1. Tính độ chênh lệch tọa độ để biết đang đi hướng nào
+        dx = self.rect.x - self.last_x
+        dy = self.rect.y - self.last_y
+        
+        if dx != 0 or dy != 0:
+            self.is_moving = True
+            if dx > 0: self.direction = "right"
+            elif dx < 0: self.direction = "left"
+            elif dy > 0: self.direction = "down"
+            elif dy < 0: self.direction = "up"
+        else:
+            self.is_moving = False
+
+        # Cập nhật lại tọa độ cũ cho frame tiếp theo
+        self.last_x = self.rect.x
+        self.last_y = self.rect.y
+
+        # 2. Cập nhật frame hoạt ảnh
+        if self.is_moving:
+            if now - self.animation_timer > 100:  # Đổi frame mỗi 100ms
+                self.frame_index = (self.frame_index + 1) % 3
+                self.animation_timer = now
+        else:
+            self.frame_index = 0  # Đứng im dùng frame số 0
+
+        # 3. Lấy ảnh theo hướng và vẽ
+        if self.direction == "down": frameset = self.frames_down
+        elif self.direction == "up": frameset = self.frames_up
+        elif self.direction == "right": frameset = self.frames_right
+        else: frameset = self.frames_left
+        
+        screen.blit(frameset[self.frame_index], self.rect)
 
     def get_danger_zones(
         self,
@@ -221,18 +281,13 @@ class Enemy:
 class DumbEnemy(Enemy):
     """Tier 1 — Quái Ngu: BFS thuần, lao thẳng vào người chơi, không né bom.
 
-    Tốc độ thấp nhất (1 pixel/frame), màu xanh lá. Phù hợp cho các màn
-    đầu (level 1–2) khi người chơi cần làm quen với cơ chế.
+    Tốc độ thấp nhất (1 pixel/frame). Phù hợp cho các màn đầu (level 1–2)
+    khi người chơi cần làm quen với cơ chế.
     """
 
     def __init__(self, grid_x: int, grid_y: int):
-        """Khởi tạo DumbEnemy tại ô lưới (grid_x, grid_y).
-
-        Args:
-            grid_x (int): Tọa độ cột trên lưới.
-            grid_y (int): Tọa độ hàng trên lưới.
-        """
-        super().__init__(grid_x, grid_y, speed=1, color=(0, 255, 0))
+        """Khởi tạo DumbEnemy tại ô lưới (grid_x, grid_y)."""
+        super().__init__(grid_x, grid_y, speed=1, color=(0, 255, 0), enemy_model="enemy_dumb")
 
     def find_path(
         self,
@@ -243,23 +298,7 @@ class DumbEnemy(Enemy):
         explosion_range: int,
         now: int,
     ) -> list[tuple[int, int]]:
-        """Tìm đường ngắn nhất đến người chơi bằng BFS, bỏ qua hoàn toàn bom.
-
-        Không tính ``danger_zones``; kẻ địch sẵn sàng đi qua ô bom nếu đó
-        là đường ngắn nhất. Chỉ tránh ``WALL`` và ``SOFT_WALL``.
-
-        Args:
-            player_x (int): Tọa độ cột người chơi trên lưới.
-            player_y (int): Tọa độ hàng người chơi trên lưới.
-            game_map (list[list[int]]): Bản đồ 2D.
-            bomb_queue (list[dict]): Không được sử dụng (giữ chữ ký chung).
-            explosion_range (int): Không được sử dụng.
-            now (int): Không được sử dụng.
-
-        Returns:
-            list[tuple[int, int]]: Đường đi từ bước kế tiếp đến người chơi.
-            Trả về ``[]`` nếu không tìm được đường.
-        """
+        """Tìm đường ngắn nhất đến người chơi bằng BFS, bỏ qua hoàn toàn bom."""
         start = (self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE)
         goal = (player_x, player_y)
         queue: deque = deque([(start[0], start[1], [])])
@@ -284,19 +323,13 @@ class DumbEnemy(Enemy):
 class SmartEnemy(Enemy):
     """Tier 2 — Quái Khôn: BFS + flood-fill né bom, không tính trọng số địa hình.
 
-    Tốc độ trung bình (2 pixel/frame), màu cam. Khi đứng trong vùng nguy
-    hiểm, ưu tiên thoát ra trước khi tiếp tục truy đuổi. Phù hợp cho
-    level 3–4 kết hợp với DumbEnemy.
+    Tốc độ trung bình (2 pixel/frame). Khi đứng trong vùng nguy hiểm, ưu tiên
+    thoát ra trước khi tiếp tục truy đuổi. Phù hợp cho level 3–4.
     """
 
     def __init__(self, grid_x: int, grid_y: int):
-        """Khởi tạo SmartEnemy tại ô lưới (grid_x, grid_y).
-
-        Args:
-            grid_x (int): Tọa độ cột trên lưới.
-            grid_y (int): Tọa độ hàng trên lưới.
-        """
-        super().__init__(grid_x, grid_y, speed=2, color=(255, 165, 0))
+        """Khởi tạo SmartEnemy tại ô lưới (grid_x, grid_y)."""
+        super().__init__(grid_x, grid_y, speed=2, color=(255, 165, 0), enemy_model="enemy_smart")
 
     def find_path(
         self,
@@ -307,23 +340,7 @@ class SmartEnemy(Enemy):
         explosion_range: int,
         now: int,
     ) -> list[tuple[int, int]]:
-        """Tìm đường đến người chơi bằng BFS, né vùng nguy hiểm khi truy đuổi.
-
-        Nếu đang đứng trong ``danger_zones``, gọi :meth:`bfs_to_safety` để
-        thoát ra trước. Khi an toàn, BFS tìm đường đến người chơi và loại
-        bỏ các ô trong ``danger_zones`` khỏi không gian tìm kiếm.
-
-        Args:
-            player_x (int): Tọa độ cột người chơi trên lưới.
-            player_y (int): Tọa độ hàng người chơi trên lưới.
-            game_map (list[list[int]]): Bản đồ 2D.
-            bomb_queue (list[dict]): Danh sách bom đang hoạt động.
-            explosion_range (int): Tầm nổ tối đa.
-            now (int): Thời điểm hiện tại (ms).
-
-        Returns:
-            list[tuple[int, int]]: Đường đi cập nhật vào ``self.path``.
-        """
+        """Tìm đường đến người chơi bằng BFS, né vùng nguy hiểm khi truy đuổi."""
         start = (self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE)
         goal = (player_x, player_y)
         danger_zones = self.get_danger_zones(bomb_queue, explosion_range, now, game_map)
@@ -354,9 +371,8 @@ class SmartEnemy(Enemy):
 class EliteEnemy(Enemy):
     """Tier 3 — Quái Tinh Anh (Trùm): A* có trọng số địa hình + phản xạ bom nhanh hơn.
 
-    Tốc độ 2 pixel/frame, màu đỏ thẫm, ``reaction_delay`` tăng lên 1500 ms
-    (phản xạ sớm hơn SmartEnemy). Sử dụng A* để chọn đường có tổng chi phí
-    thấp nhất thay vì chỉ chọn đường ngắn nhất về khoảng cách.
+    Tốc độ 2 pixel/frame, ``reaction_delay`` tăng lên 1500 ms (phản xạ sớm hơn
+    SmartEnemy). Sử dụng A* để chọn đường có tổng chi phí thấp nhất.
 
     Trọng số ô:
     - ``EMPTY`` / ``TRAP_TELEPORT``: 1 (ưu tiên cao nhất).
@@ -366,39 +382,16 @@ class EliteEnemy(Enemy):
     """
 
     def __init__(self, grid_x: int, grid_y: int):
-        """Khởi tạo EliteEnemy tại ô lưới (grid_x, grid_y).
-
-        Args:
-            grid_x (int): Tọa độ cột trên lưới.
-            grid_y (int): Tọa độ hàng trên lưới.
-        """
-        super().__init__(grid_x, grid_y, speed=2, color=(200, 0, 0))
+        """Khởi tạo EliteEnemy tại ô lưới (grid_x, grid_y)."""
+        super().__init__(grid_x, grid_y, speed=2, color=(200, 0, 0), enemy_model="enemy_elite")
         self.reaction_delay = 1500
 
     def heuristic(self, a: tuple[int, int], b: tuple[int, int]) -> int:
-        """Hàm heuristic Manhattan distance cho thuật toán A*.
-
-        Args:
-            a (tuple[int, int]): Ô hiện tại ``(grid_x, grid_y)``.
-            b (tuple[int, int]): Ô đích ``(grid_x, grid_y)``.
-
-        Returns:
-            int: Khoảng cách Manhattan ``|ax - bx| + |ay - by|``.
-        """
+        """Hàm heuristic Manhattan distance cho thuật toán A*."""
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def get_tile_weight(self, tile: int) -> float:
-        """Trả về chi phí di chuyển qua một loại ô.
-
-        Chi phí dùng làm trọng số cạnh trong A*. Ô không đi được trả về
-        ``float('inf')`` để loại khỏi không gian tìm kiếm.
-
-        Args:
-            tile (int): Hằng số tile từ ``settings``.
-
-        Returns:
-            float: Chi phí di chuyển (1, 2, 5 hoặc ``inf``).
-        """
+        """Trả về chi phí di chuyển qua một loại ô cho A*."""
         if tile in (EMPTY, TRAP_TELEPORT):
             return 1
         elif tile == TRAP_ICE:
@@ -414,22 +407,7 @@ class EliteEnemy(Enemy):
         game_map: list[list[int]],
         danger_zones: set[tuple[int, int]],
     ) -> list[tuple[int, int]]:
-        """Tìm đường đến ``goal`` bằng A* có trọng số, tránh vùng nguy hiểm.
-
-        Sử dụng Manhattan distance làm heuristic. Các ô trong ``danger_zones``
-        hoặc có trọng số ``inf`` bị loại khỏi không gian tìm kiếm. Khi có
-        nhiều đường cùng f-score, đường có g-score thấp hơn được ưu tiên.
-
-        Args:
-            start (tuple[int, int]): Ô xuất phát ``(grid_x, grid_y)``.
-            goal (tuple[int, int]): Ô đích ``(grid_x, grid_y)``.
-            game_map (list[list[int]]): Bản đồ 2D.
-            danger_zones (set[tuple[int, int]]): Tập hợp ô cần tránh.
-
-        Returns:
-            list[tuple[int, int]]: Đường đi từ bước kế tiếp ``start`` đến
-            ``goal``. Trả về ``[]`` nếu không tìm được đường.
-        """
+        """Tìm đường đến ``goal`` bằng A* có trọng số, tránh vùng nguy hiểm."""
         open_set: list = []
         heapq.heappush(open_set, (0, 0, start))
         came_from: dict[tuple[int, int], tuple[int, int]] = {}
@@ -470,22 +448,7 @@ class EliteEnemy(Enemy):
         explosion_range: int,
         now: int,
     ) -> list[tuple[int, int]]:
-        """Tìm đường đến người chơi bằng A*, thoát vùng nguy hiểm nếu cần.
-
-        Nếu đang đứng trong ``danger_zones``, gọi :meth:`bfs_to_safety`.
-        Ngược lại, dùng :meth:`a_star_hunt` để chọn đường có chi phí tối ưu.
-
-        Args:
-            player_x (int): Tọa độ cột người chơi trên lưới.
-            player_y (int): Tọa độ hàng người chơi trên lưới.
-            game_map (list[list[int]]): Bản đồ 2D.
-            bomb_queue (list[dict]): Danh sách bom đang hoạt động.
-            explosion_range (int): Tầm nổ tối đa.
-            now (int): Thời điểm hiện tại (ms).
-
-        Returns:
-            list[tuple[int, int]]: Đường đi cập nhật vào ``self.path``.
-        """
+        """Tìm đường đến người chơi bằng A*, thoát vùng nguy hiểm nếu cần."""
         start = (self.rect.centerx // TILE_SIZE, self.rect.centery // TILE_SIZE)
         goal = (player_x, player_y)
         danger_zones = self.get_danger_zones(bomb_queue, explosion_range, now, game_map)

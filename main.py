@@ -167,11 +167,14 @@ class Game:
         if self.is_pvp:
             self.level_manager.generate_pvp_level()
             # P1 góc trái trên, P2 góc phải dưới
+            # Mặc định player_model="Player_1"
             self.player1 = Player(TILE_SIZE + 5, TILE_SIZE + 5, lives=3)
+            # Khởi tạo Player 2 với model riêng biệt
             self.player2 = Player(
                 SCREEN_WIDTH - TILE_SIZE * 2 + 5,
                 SCREEN_HEIGHT - TILE_SIZE * 2 + 5,
                 lives=3,
+                player_model="Player_2"
             )
             self.pvp_winner = None
         else:
@@ -566,8 +569,8 @@ class Game:
             1. Map (WALL, SOFT_WALL, trap tiles, cửa qua màn).
             2. Visualization mode: vòng tròn vàng dọc đường đi BFS của enemy.
             3. Power-up, explosion (lửa), bom.
-            4. Enemy (màu lấy từ ``enemy.color``).
-            5. Player 1 (qua ``Player.draw()``); Player 2 nếu PvP.
+            4. Enemy (vẽ thông qua hàm draw riêng để hiện sprite).
+            5. Player 1 (vẽ qua draw riêng); Player 2 nếu PvP.
             6. HUD: HP và Level / chế độ.
             7. Overlay mờ + text GAME OVER hoặc VICTORY.
         """
@@ -656,7 +659,7 @@ class Game:
                             (step[0] * TILE_SIZE + 20, step[1] * TILE_SIZE + 20), 6,
                         )
 
-            # Power-up, Lửa, Bom, Enemy
+            # Power-up, Lửa, Bom
             for (gx, gy), p_type in self.level_manager.powerups.items():
                 color = (LIGHT_BLUE if p_type == "SPEED" else
                          YELLOW     if p_type == "RANGE"  else
@@ -669,22 +672,19 @@ class Game:
             for b in self.bomb_queue:
                 pygame.draw.circle(self.screen, RED,
                                    (b['x'] * TILE_SIZE + 20, b['y'] * TILE_SIZE + 20), 15)
+            
+            # Vẽ Enemy bằng cơ chế hoạt ảnh (Animation)
+            current_time = pygame.time.get_ticks()
             for enemy in self.level_manager.enemies:
-                pygame.draw.rect(self.screen, enemy.color, enemy.rect)
+                enemy.draw(self.screen, current_time)
 
-            # Player 1 (dùng Player.draw() để có hiệu ứng i-frame và khiên)
+            # Player 1
             if self.player1 and not self.player1.is_dead:
-                self.player1.draw(self.screen, pygame.time.get_ticks())
+                self.player1.draw(self.screen, current_time)
 
-            # Player 2 (PvP) — vẽ trực tiếp (chưa tách sang Player.draw)
+            # Player 2 (PvP)
             if self.is_pvp and self.player2 and not self.player2.is_dead:
-                color2 = PURPLE if self.player2.is_ghost else RED
-                pygame.draw.rect(self.screen, color2, self.player2.rect)
-                if self.player2.shields:
-                    pygame.draw.circle(
-                        self.screen, CYAN, self.player2.rect.center,
-                        TILE_SIZE // 2 + 4, len(self.player2.shields) * 2,
-                    )
+                self.player2.draw(self.screen, current_time)
 
             # HUD: HP và Level / chế độ
             font = pygame.font.SysFont("Arial", 22, bold=True)
