@@ -23,6 +23,7 @@ from collections import deque
 from settings import *
 from player import Player
 from level_manager import LevelManager
+from asset_loader import AssetLoader
 
 # Hằng số FSM — trạng thái game
 
@@ -47,6 +48,9 @@ MAX_LEVEL = 5
 SAVE_FILE = "savegame.json"
 """str: Đường dẫn file lưu checkpoint Campaign."""
 
+HUD_HEIGHT = 40
+"""int: Độ cao của thanh thông tin (HUD) hiển thị HP và Level."""
+
 
 class Game:
     """Quản lý vòng lặp chính và trạng thái game Bomberman.
@@ -60,9 +64,11 @@ class Game:
     - Quản lý bomb_queue (Queue) và chuỗi nổ.
     - Xử lý môi trường: băng, băng chuyền, teleport.
     - Điều phối AI kẻ địch và va chạm.
+    - Quản lý bề mặt hiển thị phụ (game_surface) để tách biệt HUD.
 
     Attributes:
-        screen (pygame.Surface): Cửa sổ hiển thị game.
+        screen (pygame.Surface): Cửa sổ hiển thị tổng (bao gồm cả HUD).
+        game_surface (pygame.Surface): Bề mặt render nội dung game chính.
         clock (pygame.time.Clock): Đồng hồ điều chỉnh FPS.
         show_visualization (bool): Bật/tắt hiển thị đường đi BFS của AI (phím V).
         state (int): Trạng thái FSM hiện tại (STATE_MENU, STATE_PLAYING, …).
@@ -80,9 +86,13 @@ class Game:
     """
 
     def __init__(self):
-        """Khởi tạo Pygame, màn hình, đọc checkpoint và chuẩn bị FSM."""
+        """Khởi tạo Pygame, màn hình, đọc checkpoint và nạp hình ảnh."""
         pygame.init()
-        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+        # Nới rộng màn hình tổng thêm phần HUD phía trên
+        self.screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT + HUD_HEIGHT))
+        # Surface riêng cho bản đồ game (vẫn giữ nguyên hệ tọa độ cũ)
+        self.game_surface = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT))
+        
         pygame.display.set_caption("Bomberman DSA - Campaign & PvP")
         self.clock = pygame.time.Clock()
         self.show_visualization = False
@@ -92,20 +102,48 @@ class Game:
         # Đọc toàn bộ dữ liệu checkpoint từ JSON
         saved_data = self.load_progress()
         self.saved_level = saved_data.get("saved_level", 1)
-        # Lưu trữ thông số từ checkpoint (mặc định nếu chưa có save)
         self.saved_stats = saved_data.get(
             "stats", {"speed": PLAYER_SPEED, "range": 2, "shields": []}
         )
 
         self.level = 1
         self.transition_timer = 0
-
         self.is_pvp = False
-        self.pvp_winner = None  # 1 = P1 thắng, 2 = P2 thắng, 0 = hòa
-
+        self.pvp_winner = None
         self.level_manager = LevelManager()
         self.player1 = None
         self.player2 = None
+
+        # --- NẠP TOÀN BỘ HÌNH ẢNH (ASSETS) ---
+        self.wall_img = AssetLoader.load_image("wall.png", TILE_SIZE, TILE_SIZE)
+        self.soft_wall_img = AssetLoader.load_image("soft_wall.png", TILE_SIZE, TILE_SIZE)
+        self.floor_img = AssetLoader.load_image("floor.png", TILE_SIZE, TILE_SIZE)
+        self.door_img = AssetLoader.load_image("door.png", TILE_SIZE, TILE_SIZE)
+
+        # Nạp Bẫy (Traps)
+        self.ice_img = AssetLoader.load_image("trap_ice.png", TILE_SIZE, TILE_SIZE)
+        self.tele_frames = AssetLoader.load_sprite_sheet("trap_teleport.png", 40, 40, 3)
+        if not self.tele_frames or len(self.tele_frames) < 3:
+            s = pygame.Surface((40, 40)); s.fill(MAGENTA)
+            self.tele_frames = [s] * 3
+
+        # Nạp Items
+        self.item_imgs = {
+            "SPEED":  AssetLoader.load_image("item_speed.png", TILE_SIZE, TILE_SIZE),
+            "RANGE":  AssetLoader.load_image("item_range.png", TILE_SIZE, TILE_SIZE),
+            "SHIELD": AssetLoader.load_image("item_shield.png", TILE_SIZE, TILE_SIZE),
+            "GHOST":  AssetLoader.load_image("item_ghost.png", TILE_SIZE, TILE_SIZE)
+        }
+
+        # Nạp Bom và Vụ nổ
+        self.bomb_frames = AssetLoader.load_sprite_sheet("bomb.png", 40, 40, 3)
+        if not self.bomb_frames or len(self.bomb_frames) < 3:
+            s = pygame.Surface((40, 40)); s.fill(RED)
+            self.bomb_frames = [s] * 3
+
+        self.exp_center = AssetLoader.load_image("exp_center.png", TILE_SIZE, TILE_SIZE)
+        self.exp_body   = AssetLoader.load_image("exp_body.png", TILE_SIZE, TILE_SIZE)
+        self.exp_end    = AssetLoader.load_image("exp_end.png", TILE_SIZE, TILE_SIZE)
 
     # Checkpoint (Save / Load)
 
@@ -166,10 +204,7 @@ class Game:
 
         if self.is_pvp:
             self.level_manager.generate_pvp_level()
-            # P1 góc trái trên, P2 góc phải dưới
-            # Mặc định player_model="Player_1"
-            self.player1 = Player(TILE_SIZE + 5, TILE_SIZE + 5, lives=3)
-            # Khởi tạo Player 2 với model riêng biệt
+            self.player1 = Player(TILE_SIZE + 5, TILE_SIZE + 5, lives=3, player_model="Player_1")
             self.player2 = Player(
                 SCREEN_WIDTH - TILE_SIZE * 2 + 5,
                 SCREEN_HEIGHT - TILE_SIZE * 2 + 5,
@@ -179,14 +214,13 @@ class Game:
             self.pvp_winner = None
         else:
             self.level_manager.generate_level(self.level)
-            self.player1 = Player(TILE_SIZE + 5, TILE_SIZE + 5, lives=1)
+            self.player1 = Player(TILE_SIZE + 5, TILE_SIZE + 5, lives=1, player_model="Player_1")
 
             # Khôi phục thống số từ checkpoint cho Player 1
             self.player1.current_speed   = self.saved_stats.get("speed", PLAYER_SPEED)
             self.player1.explosion_range = self.saved_stats.get("range", 2)
             self.player1.shields         = self.saved_stats.get("shields", []).copy()
-
-            self.player2 = None  # Campaign chỉ có 1 người
+            self.player2 = None
 
     def start_campaign(self, is_new_game: bool = False) -> None:
         """Bắt đầu chế độ Campaign và chuyển sang STATE_TRANSITION.
@@ -197,7 +231,6 @@ class Game:
         """
         self.is_pvp = False
         if is_new_game:
-            # Xóa checkpoint cũ nếu chọn chơi lại từ đầu
             self.saved_level = 1
             self.saved_stats = {"speed": PLAYER_SPEED, "range": 2, "shields": []}
             self.save_progress()
@@ -258,7 +291,6 @@ class Game:
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_m:
                         if not self.is_pvp:
-                            # Reset checkpoint sau khi hoàn thành campaign
                             self.saved_level = 1
                             self.saved_stats = {"speed": PLAYER_SPEED, "range": 2, "shields": []}
                             self.save_progress()
@@ -268,7 +300,6 @@ class Game:
 
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
-                    # Đặt bom Player 1 (phím B)
                     if event.key == pygame.K_b and not self.player1.is_dead:
                         gx = self.player1.rect.centerx // TILE_SIZE
                         gy = self.player1.rect.centery // TILE_SIZE
@@ -278,7 +309,6 @@ class Game:
                                 'timer': pygame.time.get_ticks() + 2000,
                                 'range': self.player1.explosion_range,
                             })
-                    # Đặt bom Player 2 (phím P) — chỉ PvP
                     elif self.is_pvp and event.key == pygame.K_p and not self.player2.is_dead:
                         gx = self.player2.rect.centerx // TILE_SIZE
                         gy = self.player2.rect.centery // TILE_SIZE
@@ -294,7 +324,6 @@ class Game:
         if self.state == STATE_PLAYING:
             keys = pygame.key.get_pressed()
 
-            # Di chuyển Player 1 (WASD)
             if not self.player1.is_dead:
                 dx1, dy1 = 0, 0
                 if keys[pygame.K_a]: dx1 = -self.player1.current_speed
@@ -305,7 +334,6 @@ class Game:
                     self.player1.last_dx, self.player1.last_dy = dx1, dy1
                 self.player1.move(dx1, dy1, self.level_manager.map)
 
-            # Di chuyển Player 2 (mũi tên) — chỉ PvP
             if self.is_pvp and not self.player2.is_dead:
                 dx2, dy2 = 0, 0
                 if keys[pygame.K_LEFT]:  dx2 = -self.player2.current_speed
@@ -331,6 +359,7 @@ class Game:
         - Dừng khi gặp WALL (không phá được, không xuyên).
         - Dừng sau khi phá SOFT_WALL (phá được, không xuyên qua).
         - 20% xác suất rơi power-up khi phá SOFT_WALL.
+        - Phân loại mảnh tia lửa để xoay ảnh (center, body, end).
 
         Args:
             start_x (int): Cột tâm bom trên lưới.
@@ -338,21 +367,36 @@ class Game:
             exp_range (int): Tầm nổ của bom này (lấy từ ``bomb['range']``).
         """
         now = pygame.time.get_ticks()
-        explosion_queue = deque([(start_x, start_y)])  # DSA: Queue BFS chain explosion
+        explosion_queue = deque([(start_x, start_y)])
 
         while explosion_queue:
             bx, by = explosion_queue.popleft()
-            for dx, dy in [(0, 0), (0, 1), (0, -1), (1, 0), (-1, 0)]:
-                for i in range(0 if (dx, dy) == (0, 0) else 1, exp_range + 1):
+            self.explosions.append({'x': bx, 'y': by, 'expiry': now + 500, 'type': 'center', 'angle': 0})
+
+            for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
+                angle = 0
+                if dx == 1: angle = 0
+                elif dx == -1: angle = 180
+                elif dy == -1: angle = 90
+                elif dy == 1: angle = 270
+
+                for i in range(1, exp_range + 1):
                     nx, ny = bx + dx * i, by + dy * i
                     if 0 <= nx < GRID_WIDTH and 0 <= ny < GRID_HEIGHT:
                         tile = self.level_manager.map[ny][nx]
                         if tile == WALL:
                             break
 
-                        self.explosions.append({'x': nx, 'y': ny, 'expiry': now + 500})
+                        is_last = (i == exp_range)
+                        if not is_last:
+                            nnx, nny = nx + dx, ny + dy
+                            if 0 <= nnx < GRID_WIDTH and 0 <= nny < GRID_HEIGHT:
+                                if self.level_manager.map[nny][nnx] in [WALL, SOFT_WALL]:
+                                    is_last = True
 
-                        # Chain explosion: bom trong tầm nổ bị kích ngay lập tức
+                        part_type = 'end' if is_last else 'body'
+                        self.explosions.append({'x': nx, 'y': ny, 'expiry': now + 500, 'type': part_type, 'angle': angle})
+
                         for bomb in list(self.bomb_queue):
                             if bomb['x'] == nx and bomb['y'] == ny:
                                 self.bomb_queue.remove(bomb)
@@ -360,12 +404,10 @@ class Game:
 
                         if tile == SOFT_WALL:
                             self.level_manager.map[ny][nx] = EMPTY
-                            if random.random() < 0.20:  # PvP: drop rate 20%
+                            if random.random() < 0.20:
                                 self.level_manager.powerups[(nx, ny)] = random.choice(
                                     ["SPEED", "RANGE", "SHIELD", "GHOST"]
                                 )
-                            break
-                        if (dx, dy) == (0, 0):
                             break
 
     # Update
@@ -399,32 +441,29 @@ class Game:
         if self.state != STATE_PLAYING:
             return
 
-        # 1. Win / Loss
         if not self.is_pvp and self.player1.is_dead:
             self.state = STATE_GAMEOVER
             return
 
         if self.is_pvp:
             if self.player1.is_dead and self.player2.is_dead:
-                self.pvp_winner = 0   # Hòa
+                self.pvp_winner = 0
                 self.state = STATE_VICTORY
                 return
             elif self.player1.is_dead:
-                self.pvp_winner = 2   # P2 thắng
+                self.pvp_winner = 2
                 self.state = STATE_VICTORY
                 return
             elif self.player2.is_dead:
-                self.pvp_winner = 1   # P1 thắng
+                self.pvp_winner = 1
                 self.state = STATE_VICTORY
                 return
 
-        # 2. Bom hết hạn → nổ (DSA: Queue popleft)
         while self.bomb_queue and now >= self.bomb_queue[0]['timer']:
             b = self.bomb_queue.popleft()
             self.handle_explosion(b['x'], b['y'], b['range'])
         self.explosions = [e for e in self.explosions if e['expiry'] > now]
 
-        # 3. Va chạm explosion với player và enemy
         for e in self.explosions:
             exp_rect = pygame.Rect(e['x'] * TILE_SIZE, e['y'] * TILE_SIZE, TILE_SIZE, TILE_SIZE)
             if not self.player1.is_dead and self.player1.rect.colliderect(exp_rect):
@@ -435,12 +474,11 @@ class Game:
                 if enemy.rect.colliderect(exp_rect):
                     self.level_manager.enemies.remove(enemy)
 
-        # 4. Xử lý môi trường cho từng player
         players = [self.player1]
         if self.is_pvp:
             players.append(self.player2)
 
-        keys = pygame.key.get_pressed()  # Dùng để kiểm tra trượt băng
+        keys = pygame.key.get_pressed()
 
         for p in players:
             if p.is_dead:
@@ -449,7 +487,6 @@ class Game:
             py_grid = p.rect.centery // TILE_SIZE
             current_tile = self.level_manager.map[py_grid][px_grid]
 
-            # Ô Băng (TRAP_ICE): trượt theo đà khi buông phím
             on_ice = False
             for r in range(max(0, py_grid - 1), min(GRID_HEIGHT, py_grid + 2)):
                 for c in range(max(0, px_grid - 1), min(GRID_WIDTH, px_grid + 2)):
@@ -469,12 +506,10 @@ class Game:
                     is_moving = any(keys[k] for k in [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
 
                 if not is_moving:
-                    # Duy trì tốc độ trượt bằng current_speed theo hướng cuối cùng
                     slide_x = p.current_speed if p.last_dx > 0 else (-p.current_speed if p.last_dx < 0 else 0)
                     slide_y = p.current_speed if p.last_dy > 0 else (-p.current_speed if p.last_dy < 0 else 0)
                     p.move(slide_x, slide_y, self.level_manager.map)
 
-            # Băng chuyền: đẩy lực vào Queue rồi áp dụng ngay trong frame này
             if current_tile == CONVEYOR_LEFT:
                 p.forced_move_queue.append((-2, 0))
             elif current_tile == CONVEYOR_RIGHT:
@@ -483,13 +518,11 @@ class Game:
                 fdx, fdy = p.forced_move_queue.popleft()
                 p.move(fdx, fdy, self.level_manager.map)
 
-            # Power-up: reset hiệu ứng hết hạn (Min-Heap) và nhặt item mới
             p.update_items(now, current_tile)
             if (px_grid, py_grid) in self.level_manager.powerups:
                 p_type = self.level_manager.powerups.pop((px_grid, py_grid))
                 p.pick_up_item(p_type, now)
 
-            # Teleport
             teleports = self.level_manager.teleports
             if teleports and now > p.teleport_cooldown and (px_grid, py_grid) in teleports:
                 other = (teleports[1] if (px_grid, py_grid) == teleports[0] else teleports[0])
@@ -499,7 +532,6 @@ class Game:
                 )
                 p.teleport_cooldown = now + 1000
 
-        # 5. Cửa qua màn (Campaign)
         if not self.is_pvp:
             px = self.player1.rect.centerx // TILE_SIZE
             py = self.player1.rect.centery // TILE_SIZE
@@ -515,8 +547,6 @@ class Game:
                     self.state = STATE_VICTORY
                 else:
                     self.saved_level += 1
-
-                    # Lưu checkpoint: tạo snapshot chỉ số player hiện tại
                     self.saved_stats = {
                         "speed":   self.player1.current_speed,
                         "range":   self.player1.explosion_range,
@@ -526,13 +556,11 @@ class Game:
                     self.start_campaign(is_new_game=False)
                 return
 
-        # 6. AI kẻ địch (Campaign)
         for enemy in self.level_manager.enemies:
             ex = enemy.rect.centerx // TILE_SIZE
             ey = enemy.rect.centery // TILE_SIZE
             if 0 <= ex < GRID_WIDTH and 0 <= ey < GRID_HEIGHT:
                 e_tile = self.level_manager.map[ey][ex]
-                # Băng chuyền tác động lên enemy: đẩy ngang, xóa path BFS hiện tại
                 if e_tile == CONVEYOR_LEFT:
                     enemy.rect.x -= 2
                     if enemy.check_collision(self.level_manager.map):
@@ -546,7 +574,6 @@ class Game:
 
             px = self.player1.rect.centerx // TILE_SIZE
             py = self.player1.rect.centery // TILE_SIZE
-            # BFS tìm đường mỗi frame
             path = enemy.find_path(
                 px, py, self.level_manager.map,
                 self.bomb_queue, self.player1.explosion_range, now,
@@ -566,151 +593,151 @@ class Game:
         - **STATE_MENU**: tiêu đề và các lựa chọn ([1] PvP, [2] New, [3] Continue).
         - **STATE_TRANSITION**: tên level hoặc "PVP BATTLE".
         - **STATE_PLAYING / GAMEOVER / VICTORY**:
-            1. Map (WALL, SOFT_WALL, trap tiles, cửa qua màn).
-            2. Visualization mode: vòng tròn vàng dọc đường đi BFS của enemy.
-            3. Power-up, explosion (lửa), bom.
-            4. Enemy (vẽ thông qua hàm draw riêng để hiện sprite).
-            5. Player 1 (vẽ qua draw riêng); Player 2 nếu PvP.
-            6. HUD: HP và Level / chế độ.
+            1. Vẽ HUD (Thanh thông tin đỉnh màn hình).
+            2. Vẽ nội dung game lên ``game_surface``.
+            3. Map (Sàn trước, tường sau, bẫy, cửa qua màn).
+            4. Visualization mode: vòng tròn vàng dọc đường đi BFS của enemy.
+            5. Power-up, explosion (lửa tự động xoay), bom.
+            6. Enemy và Player.
             7. Overlay mờ + text GAME OVER hoặc VICTORY.
+            8. Ghép ``game_surface`` vào ``screen`` bên dưới thanh HUD.
         """
-        self.screen.fill(BLACK)
+        # 1. Vẽ thanh HUD trực tiếp lên màn hình tổng
+        self.screen.fill((20, 20, 20))
+        now = pygame.time.get_ticks()
+        font = pygame.font.SysFont("Arial", 24, bold=True)
+        
+        if self.state in [STATE_PLAYING, STATE_GAMEOVER, STATE_VICTORY]:
+            p1_hp = font.render(f"P1 HP: {self.player1.lives}", True, BLUE)
+            self.screen.blit(p1_hp, (20, 8))
+            
+            if self.is_pvp:
+                p2_hp = font.render(f"P2 HP: {self.player2.lives}", True, RED)
+                self.screen.blit(p2_hp, (150, 8))
+            
+            mode_label = "PVP MATCH" if self.is_pvp else f"CAMPAIGN - LEVEL {self.level}"
+            mode_txt = font.render(mode_label, True, WHITE)
+            self.screen.blit(mode_txt, (SCREEN_WIDTH // 2 - mode_txt.get_width() // 2, 8))
+
+        # 2. Bắt đầu vẽ nội dung vào game_surface
+        self.game_surface.fill(BLACK)
 
         if self.state == STATE_MENU:
             font_title = pygame.font.SysFont("Arial", 64, bold=True)
             font_opt   = pygame.font.SysFont("Arial", 32)
 
             title = font_title.render("BOMBERMAN DSA", True, WHITE)
-            self.screen.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120)))
+            self.game_surface.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120)))
 
             opt1 = font_opt.render("[1] PvP Mode (2 Players)", True, RED)
             opt2 = font_opt.render("[2] New Campaign", True, WHITE)
-            self.screen.blit(opt1, opt1.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
-            self.screen.blit(opt2, opt2.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
+            self.game_surface.blit(opt1, opt1.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
+            self.game_surface.blit(opt2, opt2.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
 
             if self.saved_level > 1:
                 opt3 = font_opt.render(
                     f"[3] Continue Campaign (Level {self.saved_level})", True, YELLOW
                 )
-                self.screen.blit(opt3, opt3.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)))
+                self.game_surface.blit(opt3, opt3.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)))
 
         elif self.state == STATE_TRANSITION:
             font_level = pygame.font.SysFont("Arial", 72, bold=True)
             label = "PVP BATTLE" if self.is_pvp else f"LEVEL {self.level}"
             lvl_txt = font_level.render(label, True, WHITE)
-            self.screen.blit(lvl_txt, lvl_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
+            self.game_surface.blit(lvl_txt, lvl_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
 
         elif self.state in [STATE_PLAYING, STATE_GAMEOVER, STATE_VICTORY]:
 
-            # Kiểm tra có player nào đang Ghost mode không (để đổi màu tường mềm)
             any_ghost = (
                 (self.player1 and not self.player1.is_dead and self.player1.is_ghost)
                 or (self.is_pvp and self.player2 and not self.player2.is_dead and self.player2.is_ghost)
             )
 
-            # Vẽ Map
+            # Vẽ Map & Bẫy
             for r in range(GRID_HEIGHT):
                 for c in range(GRID_WIDTH):
-                    rect = (c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                    pos = (c * TILE_SIZE, r * TILE_SIZE)
+                    self.game_surface.blit(self.floor_img, pos)
+                    
                     tile = self.level_manager.map[r][c]
-
                     if tile == WALL:
-                        pygame.draw.rect(self.screen, GRAY, rect)
+                        self.game_surface.blit(self.wall_img, pos)
                     elif tile == SOFT_WALL:
-                        # Tường mềm tối hơn khi có người dùng Ghost (visual hint)
-                        wall_color = (100, 50, 10) if any_ghost else (139, 69, 19)
-                        pygame.draw.rect(self.screen, wall_color, rect)
+                        if any_ghost:
+                            ghost_wall = self.soft_wall_img.copy()
+                            ghost_wall.fill((100, 100, 100), special_flags=pygame.BLEND_RGB_MULT)
+                            self.game_surface.blit(ghost_wall, pos)
+                        else:
+                            self.game_surface.blit(self.soft_wall_img, pos)
                     elif tile == TRAP_ICE:
-                        pygame.draw.rect(self.screen, LIGHT_BLUE_ICE, rect)
+                        self.game_surface.blit(self.ice_img, pos)
                     elif tile in [CONVEYOR_LEFT, CONVEYOR_RIGHT]:
-                        pygame.draw.rect(self.screen, (50, 50, 50), rect)
+                        pygame.draw.rect(self.game_surface, (50, 50, 50), (pos[0], pos[1], TILE_SIZE, TILE_SIZE))
                         arrow = "<" if tile == CONVEYOR_LEFT else ">"
                         font_arrow = pygame.font.SysFont("Arial", 20, bold=True)
-                        self.screen.blit(
+                        self.game_surface.blit(
                             font_arrow.render(arrow, True, WHITE),
                             (c * TILE_SIZE + 15, r * TILE_SIZE + 8),
                         )
                     elif tile == TRAP_TELEPORT:
-                        pygame.draw.circle(
-                            self.screen, MAGENTA,
-                            (c * TILE_SIZE + 20, r * TILE_SIZE + 20), 12, 4,
-                        )
+                        t_frame = (now // 150) % 3
+                        self.game_surface.blit(self.tele_frames[t_frame], pos)
 
-            # Cửa qua màn (Campaign) — chỉ hiển thị khi map đã mở (EMPTY)
+            # Vẽ Cửa
             if (not self.is_pvp
                     and self.level_manager.door_pos
-                    and self.level_manager.map[self.level_manager.door_pos[1]]
-                                              [self.level_manager.door_pos[0]] == EMPTY):
-                pygame.draw.rect(
-                    self.screen, GOLD,
-                    (
-                        self.level_manager.door_pos[0] * TILE_SIZE,
-                        self.level_manager.door_pos[1] * TILE_SIZE,
-                        TILE_SIZE, TILE_SIZE,
-                    ),
-                )
+                    and self.level_manager.map[self.level_manager.door_pos[1]][self.level_manager.door_pos[0]] == EMPTY):
+                door_x = self.level_manager.door_pos[0] * TILE_SIZE
+                door_y = self.level_manager.door_pos[1] * TILE_SIZE
+                self.game_surface.blit(self.door_img, (door_x, door_y))
 
-            # Visualization mode: hiển thị đường đi BFS của enemy (phím V)
             if self.show_visualization:
                 for enemy in self.level_manager.enemies:
                     for step in enemy.path:
                         pygame.draw.circle(
-                            self.screen, YELLOW,
+                            self.game_surface, YELLOW,
                             (step[0] * TILE_SIZE + 20, step[1] * TILE_SIZE + 20), 6,
                         )
 
-            # Power-up, Lửa, Bom
+            # Vẽ Vật phẩm
             for (gx, gy), p_type in self.level_manager.powerups.items():
-                color = (LIGHT_BLUE if p_type == "SPEED" else
-                         YELLOW     if p_type == "RANGE"  else
-                         CYAN       if p_type == "SHIELD" else PURPLE)
-                pygame.draw.rect(self.screen, color, (gx * TILE_SIZE + 12, gy * TILE_SIZE + 12, 16, 16))
+                self.game_surface.blit(self.item_imgs[p_type], (gx * TILE_SIZE, gy * TILE_SIZE))
 
+            # Vẽ Vụ nổ
             for e in self.explosions:
-                pygame.draw.rect(self.screen, ORANGE,
-                                 (e['x'] * TILE_SIZE, e['y'] * TILE_SIZE, TILE_SIZE, TILE_SIZE))
+                if e['type'] == 'center':
+                    img = self.exp_center
+                elif e['type'] == 'body':
+                    img = pygame.transform.rotate(self.exp_body, e['angle'])
+                else:
+                    img = pygame.transform.rotate(self.exp_end, e['angle'])
+                self.game_surface.blit(img, (e['x'] * TILE_SIZE, e['y'] * TILE_SIZE))
+
+            # Vẽ Bom
+            b_frame = (now // 200) % 3
             for b in self.bomb_queue:
-                pygame.draw.circle(self.screen, RED,
-                                   (b['x'] * TILE_SIZE + 20, b['y'] * TILE_SIZE + 20), 15)
-            
-            # Vẽ Enemy bằng cơ chế hoạt ảnh (Animation)
-            current_time = pygame.time.get_ticks()
-            for enemy in self.level_manager.enemies:
-                enemy.draw(self.screen, current_time)
-
-            # Player 1
-            if self.player1 and not self.player1.is_dead:
-                self.player1.draw(self.screen, current_time)
-
-            # Player 2 (PvP)
-            if self.is_pvp and self.player2 and not self.player2.is_dead:
-                self.player2.draw(self.screen, current_time)
-
-            # HUD: HP và Level / chế độ
-            font = pygame.font.SysFont("Arial", 22, bold=True)
-            if self.player1:
-                self.screen.blit(font.render(f"P1 HP: {self.player1.lives}", True, BLUE), (10, 10))
-
-            if self.is_pvp:
-                self.screen.blit(font.render("PvP Mode", True, WHITE), (SCREEN_WIDTH - 120, 10))
-                if self.player2:
-                    self.screen.blit(
-                        font.render(f"P2 HP: {self.player2.lives}", True, RED),
-                        (SCREEN_WIDTH - 150, 40),
-                    )
-            else:
-                self.screen.blit(
-                    font.render(f"Level: {self.level}", True, WHITE),
-                    (SCREEN_WIDTH - 100, 10),
+                self.game_surface.blit(
+                    self.bomb_frames[b_frame], 
+                    (b['x'] * TILE_SIZE, b['y'] * TILE_SIZE)
                 )
+
+            # Vẽ Enemy và Player
+            for enemy in self.level_manager.enemies:
+                enemy.draw(self.game_surface, now)
+
+            if self.player1 and not self.player1.is_dead:
+                self.player1.draw(self.game_surface, now)
+
+            if self.is_pvp and self.player2 and not self.player2.is_dead:
+                self.player2.draw(self.game_surface, now)
 
             # Overlay GAME OVER
             if self.state == STATE_GAMEOVER:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 180))
-                self.screen.blit(overlay, (0, 0))
-                self.screen.blit(
-                    font.render("GAME OVER - Press R to Restart or M for Menu", True, RED),
+                self.game_surface.blit(overlay, (0, 0))
+                self.game_surface.blit(
+                    pygame.font.SysFont("Arial", 24, bold=True).render("GAME OVER - Press R to Restart or M for Menu", True, RED),
                     (SCREEN_WIDTH // 2 - 250, SCREEN_HEIGHT // 2),
                 )
 
@@ -718,7 +745,7 @@ class Game:
             elif self.state == STATE_VICTORY:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
                 overlay.fill((0, 0, 0, 180))
-                self.screen.blit(overlay, (0, 0))
+                self.game_surface.blit(overlay, (0, 0))
 
                 if self.is_pvp:
                     txt   = "DRAW!" if self.pvp_winner == 0 else f"PLAYER {self.pvp_winner} WINS!"
@@ -728,12 +755,14 @@ class Game:
 
                 font_vic = pygame.font.SysFont("Arial", 72, bold=True)
                 vic = font_vic.render(txt, True, color)
-                self.screen.blit(vic, vic.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30)))
-                self.screen.blit(
-                    font.render("Press R to play again or M for Menu", True, WHITE),
+                self.game_surface.blit(vic, vic.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 30)))
+                self.game_surface.blit(
+                    pygame.font.SysFont("Arial", 24, bold=True).render("Press R to play again or M for Menu", True, WHITE),
                     (SCREEN_WIDTH // 2 - 200, SCREEN_HEIGHT // 2 + 50),
                 )
 
+        # 3. Dán bề mặt game_surface lên screen tổng (Nằm bên dưới HUD)
+        self.screen.blit(self.game_surface, (0, HUD_HEIGHT))
         pygame.display.flip()
 
 
