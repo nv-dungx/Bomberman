@@ -111,9 +111,9 @@ class LevelManager:
                     if rand < 0.25:
                         self.map[r][c] = SOFT_WALL
                         soft_walls_list.append((c, r))
-                    elif rand < 0.28:
+                    elif rand < 0.27:
                         self.map[r][c] = CONVEYOR_LEFT
-                    elif rand < 0.31:
+                    elif rand < 0.29:
                         self.map[r][c] = CONVEYOR_RIGHT
                     else:
                         empty_spaces.append((c, r))

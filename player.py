@@ -122,7 +122,11 @@ class Player:
         return False
 
     def take_damage(self, now: int) -> None:
-        """Áp dụng sát thương và xử lý i-frame, khiên, mạng sống."""
+        """Áp dụng sát thương và xử lý i-frame, khiên, mạng sống.
+
+        Args:
+            now (int): Thời điểm hiện tại (ms).
+        """
         if now < self.invulnerable_until:
             return
 
@@ -137,7 +141,12 @@ class Player:
                 self.invulnerable_until = now + 1500
 
     def update_items(self, now: int, current_tile: int) -> None:
-        """Hủy các hiệu ứng item đã hết hạn bằng Min-Heap."""
+        """Hủy các hiệu ứng item đã hết hạn bằng Min-Heap.
+
+        Args:
+            now (int): Thời điểm hiện tại (ms).
+            current_tile (int): Loại ô hiện tại người chơi đang đứng.
+        """
         while self.active_effects and self.active_effects[0][0] <= now:
             _, effect = heapq.heappop(self.active_effects)
             if effect == "RESET_SPEED":
@@ -150,7 +159,12 @@ class Player:
                     self.take_damage(now)
 
     def pick_up_item(self, p_type: str, now: int) -> None:
-        """Áp dụng hiệu ứng item khi nhặt được."""
+        """Áp dụng hiệu ứng item khi nhặt được.
+
+        Args:
+            p_type (str): Loại item ("SPEED", "RANGE", "SHIELD", "GHOST").
+            now (int): Thời điểm hiện tại (ms).
+        """
         if p_type == "SPEED":
             self.current_speed = 5
             heapq.heappush(self.active_effects, (now + 5000, "RESET_SPEED"))
@@ -168,6 +182,10 @@ class Player:
 
         Xử lý hoạt ảnh bước đi dựa trên ``is_moving`` và hướng ``direction``.
         Tích hợp chớp tắt khi bất tử và làm mờ ảnh khi ở trạng thái Ghost.
+
+        Args:
+            screen (pygame.Surface): Bề mặt màn hình để vẽ.
+            now (int): Thời điểm hiện tại (ms).
         """
         if self.is_dead:
             return

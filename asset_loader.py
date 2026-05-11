@@ -8,6 +8,15 @@ import os
 from settings import *
 
 class AssetLoader:
+    """Lớp quản lý nạp tài nguyên hình ảnh với cơ chế cache để tối ưu hiệu suất.
+
+    Sử dụng mẫu thiết kế Singleton-like với static methods và dictionary cache
+    để đảm bảo mỗi file ảnh chỉ được đọc từ ổ cứng một lần duy nhất.
+    Hỗ trợ nạp ảnh đơn lẻ và spritesheet cho hoạt ảnh.
+
+    Attributes:
+        _cache (dict): Bộ nhớ cache lưu trữ các ảnh đã nạp, key là tên file.
+    """
     _cache = {}  # Dictionary lưu trữ các ảnh đã nạp lên RAM
 
     @staticmethod

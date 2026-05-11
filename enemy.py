@@ -391,7 +391,14 @@ class EliteEnemy(Enemy):
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def get_tile_weight(self, tile: int) -> float:
-        """Trả về chi phí di chuyển qua một loại ô cho A*."""
+        """Trả về chi phí di chuyển qua một loại ô cho A*.
+
+        Args:
+            tile (int): Loại ô từ settings.py (EMPTY, WALL, etc.).
+
+        Returns:
+            float: Chi phí di chuyển (1 cho ô trống, cao hơn cho ô nguy hiểm).
+        """
         if tile in (EMPTY, TRAP_TELEPORT):
             return 1
         elif tile == TRAP_ICE:
@@ -407,7 +414,17 @@ class EliteEnemy(Enemy):
         game_map: list[list[int]],
         danger_zones: set[tuple[int, int]],
     ) -> list[tuple[int, int]]:
-        """Tìm đường đến ``goal`` bằng A* có trọng số, tránh vùng nguy hiểm."""
+        """Tìm đường đến ``goal`` bằng A* có trọng số, tránh vùng nguy hiểm.
+
+        Args:
+            start (tuple[int, int]): Vị trí xuất phát ``(grid_x, grid_y)``.
+            goal (tuple[int, int]): Vị trí đích ``(grid_x, grid_y)``.
+            game_map (list[list[int]]): Bản đồ 2D.
+            danger_zones (set[tuple[int, int]]): Tập hợp ô nguy hiểm.
+
+        Returns:
+            list[tuple[int, int]]: Danh sách ô lưới từ ``start`` đến ``goal``.
+        """
         open_set: list = []
         heapq.heappush(open_set, (0, 0, start))
         came_from: dict[tuple[int, int], tuple[int, int]] = {}
