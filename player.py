@@ -155,8 +155,6 @@ class Player:
                 self.explosion_range = 2
             elif effect == "RESET_GHOST":
                 self.is_ghost = False
-                if current_tile == SOFT_WALL:
-                    self.take_damage(now)
 
     def pick_up_item(self, p_type: str, now: int) -> None:
         """Áp dụng hiệu ứng item khi nhặt được.

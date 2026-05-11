@@ -401,6 +401,15 @@ class Game:
             bx, by = explosion_queue.popleft()
             self.explosions.append({'x': bx, 'y': by, 'expiry': now + 500, 'type': 'center', 'angle': 0})
 
+            # Kiểm tra softwall tại vị trí trung tâm bom
+            center_tile = self.level_manager.map[by][bx]
+            if center_tile == SOFT_WALL:
+                self.level_manager.map[by][bx] = EMPTY
+                if random.random() < 0.20:
+                    self.level_manager.powerups[(bx, by)] = random.choice(
+                        ["SPEED", "RANGE", "SHIELD", "GHOST"]
+                    )
+
             for dx, dy in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
                 angle = 0
                 if dx == 1:
