@@ -1,6 +1,6 @@
 """
 sound_manager.py
-Module quản lý toàn bộ nhạc nền (BGM) và hiệu ứng âm thanh (SFX) của game.
+Module quản lý toàn bộ hiệu ứng âm thanh (SFX) của game.
 
 Sử dụng pygame.mixer để tải và phát âm thanh. Tích hợp cơ chế "an toàn" (fallback)
 để game không bị crash nếu máy tính người chơi không có thiết bị âm thanh hoặc lỗi driver.
@@ -12,8 +12,7 @@ import os
 class SoundManager:
     """Lớp quản lý âm thanh tập trung cho game Bomberman.
 
-    Chịu trách nhiệm khởi tạo pygame.mixer, nạp trước các file hiệu ứng âm thanh (SFX)
-    vào bộ nhớ để phát ngay lập tức, và cung cấp các phương thức để bật/tắt nhạc nền (BGM).
+    Chịu trách nhiệm khởi tạo pygame.mixer, nạp trước các file hiệu ứng âm thanh (SFX).
 
     Attributes:
         enabled (bool): Cờ đánh dấu hệ thống âm thanh có hoạt động hay không.
