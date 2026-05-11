@@ -1,4 +1,4 @@
-# Đồ án: Trò chơi Bomberman - Python & Pygame (Đa Chế Độ)
+# Đồ án: Trò chơi Bomberman
 
 Đồ án môn **Cấu trúc Dữ liệu và Thuật toán (DSA)**: Tái hiện tựa game Bomberman với **chế độ Campaign (Vượt ải)** và **chế độ PvP (Đối kháng 2 người)**.
 
