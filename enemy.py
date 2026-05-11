@@ -330,6 +330,7 @@ class SmartEnemy(Enemy):
     def __init__(self, grid_x: int, grid_y: int):
         """Khởi tạo SmartEnemy tại ô lưới (grid_x, grid_y)."""
         super().__init__(grid_x, grid_y, speed=2, color=(255, 165, 0), enemy_model="enemy_smart")
+        self.reaction_delay = 1500
 
     def find_path(
         self,
@@ -384,7 +385,7 @@ class EliteEnemy(Enemy):
     def __init__(self, grid_x: int, grid_y: int):
         """Khởi tạo EliteEnemy tại ô lưới (grid_x, grid_y)."""
         super().__init__(grid_x, grid_y, speed=2, color=(200, 0, 0), enemy_model="enemy_elite")
-        self.reaction_delay = 1500
+        self.reaction_delay = 1700
 
     def heuristic(self, a: tuple[int, int], b: tuple[int, int]) -> int:
         """Hàm heuristic Manhattan distance cho thuật toán A*."""
