@@ -467,7 +467,7 @@ class EliteEnemy(Enemy):
         """Khởi tạo EliteEnemy tại ô lưới (grid_x, grid_y)."""
         super().__init__(grid_x, grid_y, speed=2, color=(200, 0, 0), enemy_model="enemy_elite")
         self.reaction_delay = 1500
-        self.post_explosion_delay = random.randint(50, 400)
+        self.post_explosion_delay = random.randint(100, 450)
 
     def on_explosion_started(self, now: int) -> None:
         """EliteEnemy đứng chờ một nhịp để vụ nổ kết thúc rồi mới đi tiếp."""
