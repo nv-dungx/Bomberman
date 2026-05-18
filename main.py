@@ -45,6 +45,9 @@ STATE_GAMEOVER         = 4
 STATE_VICTORY          = 5
 """int: Hoàn thành campaign hoặc kết thúc ván PvP."""
 
+STATE_PAUSED           = 6
+"""int: Màn hình tạm dừng khi đang trong màn chơi."""
+
 MAX_LEVEL = 5
 """int: Số level tối đa của chế độ Campaign."""
 
@@ -106,6 +109,7 @@ class Game:
 
         self.sm = SoundManager()
         self.state = STATE_MENU
+        self.paused_at = 0
 
         saved_data = self.load_progress()
         self.saved_level = saved_data.get("saved_level", 1)
@@ -208,6 +212,42 @@ class Game:
     def change_state(self, new_state: int) -> None:
         """Hàm phụ trợ để chuyển đổi trạng thái FSM."""
         self.state = new_state
+
+    def pause_game(self) -> None:
+        """Pause game and remember when the pause started."""
+        self.paused_at = pygame.time.get_ticks()
+        self.change_state(STATE_PAUSED)
+
+    def resume_game(self) -> None:
+        """Resume game without letting timers advance while paused."""
+        pause_duration = pygame.time.get_ticks() - self.paused_at
+        self.paused_at = 0
+
+        for bomb in self.bomb_queue:
+            bomb['timer'] += pause_duration
+
+        for explosion in self.explosions:
+            explosion['expiry'] += pause_duration
+
+        for enemy in self.level_manager.enemies:
+            enemy.animation_timer += pause_duration
+
+        players = [self.player1]
+        if self.is_pvp:
+            players.append(self.player2)
+
+        for player in players:
+            if not player:
+                continue
+            player.invulnerable_until += pause_duration
+            player.teleport_cooldown += pause_duration
+            player.animation_timer += pause_duration
+            player.active_effects = [
+                (expiry + pause_duration, effect)
+                for expiry, effect in player.active_effects
+            ]
+
+        self.change_state(STATE_PLAYING)
 
     def load_level(self) -> None:
         """Khởi tạo màn chơi mới và sinh các đối tượng game cần thiết."""
@@ -326,9 +366,18 @@ class Game:
                     elif event.key == pygame.K_r and self.is_pvp:
                         self.start_pvp()
 
+            elif self.state == STATE_PAUSED:
+                if event.type == pygame.KEYDOWN:
+                    if event.key in (pygame.K_RETURN, pygame.K_ESCAPE):
+                        self.sm.play_sfx("select")
+                        self.resume_game()
+
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_b and not self.player1.is_dead:
+                    if event.key == pygame.K_ESCAPE:
+                        self.sm.play_sfx("select")
+                        self.pause_game()
+                    elif event.key == pygame.K_b and not self.player1.is_dead:
                         self.place_bomb(self.player1)
                     elif self.is_pvp and event.key == pygame.K_p and not self.player2.is_dead:
                         self.place_bomb(self.player2)
@@ -654,10 +703,10 @@ class Game:
     def draw(self) -> None:
         """Render toàn bộ nội dung game lên màn hình mỗi frame."""
         self.screen.fill((20, 20, 20))
-        now = pygame.time.get_ticks()
+        now = self.paused_at if self.state == STATE_PAUSED else pygame.time.get_ticks()
         font = pygame.font.SysFont("Arial", 24, bold=True)
         
-        if self.state in [STATE_PLAYING, STATE_GAMEOVER, STATE_VICTORY]:
+        if self.state in [STATE_PLAYING, STATE_PAUSED, STATE_GAMEOVER, STATE_VICTORY]:
             p1_hp = font.render(f"P1 HP: {self.player1.lives}", True, BLUE)
             self.screen.blit(p1_hp, (20, 8))
             
@@ -744,7 +793,7 @@ class Game:
             lvl_txt = font_level.render(label, True, WHITE)
             self.game_surface.blit(lvl_txt, lvl_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
 
-        elif self.state in [STATE_PLAYING, STATE_GAMEOVER, STATE_VICTORY]:
+        elif self.state in [STATE_PLAYING, STATE_PAUSED, STATE_GAMEOVER, STATE_VICTORY]:
             
             any_ghost = False
             if self.player1 and not self.player1.is_dead and self.player1.is_ghost:
@@ -837,6 +886,26 @@ class Game:
                     "GAME OVER - Press R to Restart or M for Menu", True, RED
                 )
                 self.game_surface.blit(game_over_txt, (SCREEN_WIDTH // 2 - 250, SCREEN_HEIGHT // 2))
+
+            elif self.state == STATE_PAUSED:
+                overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 185))
+                self.game_surface.blit(overlay, (0, 0))
+
+                pause_font = pygame.font.SysFont("Arial", 72, bold=True)
+                hint_font = pygame.font.SysFont("Arial", 28, bold=True)
+
+                pause_txt = pause_font.render("PAUSED", True, YELLOW)
+                self.game_surface.blit(
+                    pause_txt,
+                    pause_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 45)),
+                )
+
+                hint_txt = hint_font.render("Press ENTER or ESC to Resume", True, WHITE)
+                self.game_surface.blit(
+                    hint_txt,
+                    hint_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 35)),
+                )
 
             elif self.state == STATE_VICTORY:
                 overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
