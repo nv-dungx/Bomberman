@@ -65,6 +65,11 @@ class Enemy:
         # Lưu tọa độ cũ để tự động suy ra hướng đi
         self.last_x = self.rect.x
         self.last_y = self.rect.y
+        self.slide_dx = 0
+        self.slide_dy = 0
+        self.move_frac_x = 0
+        self.move_frac_y = 0
+        self.teleport_cooldown = 0
 
         # Nạp dải ảnh 9 frames
         frames = AssetLoader.load_sprite_sheet(f"{enemy_model}.png", 30, 30, 9)
@@ -99,7 +104,15 @@ class Enemy:
                         return True
         return False
 
-    def move(self, game_map: list[list[int]]) -> None:
+    def consume_subpixel_step(self, axis: str, delta: float) -> int:
+        """Tích lũy phần lẻ để tốc độ float như 1.2 không bị pygame.Rect cắt mất."""
+        attr = "move_frac_x" if axis == "x" else "move_frac_y"
+        total = getattr(self, attr) + delta
+        step = int(total)
+        setattr(self, attr, total - step)
+        return step
+
+    def move(self, game_map: list[list[int]], speed_multiplier: float = 1.0) -> tuple[float, float]:
         """Di chuyển kẻ địch từng bước theo ``self.path``, có kiểm tra va chạm.
 
         Mỗi frame, kẻ địch tiến đến tọa độ pixel của ô đầu tiên trong
@@ -115,30 +128,45 @@ class Enemy:
             game_map (list[list[int]]): Bản đồ 2D dùng để kiểm tra va chạm.
         """
         if not self.path:
-            return
+            return (0, 0)
         next_step = self.path[0]
         target_x = next_step[0] * TILE_SIZE + (TILE_SIZE - PLAYER_WIDTH) // 2
         target_y = next_step[1] * TILE_SIZE + (TILE_SIZE - PLAYER_HEIGHT) // 2
+        move_speed = max(1, self.speed * speed_multiplier)
+        moved_x = 0
+        moved_y = 0
 
         dx = target_x - self.rect.x
         dy = target_y - self.rect.y
 
         if dx != 0:
-            step_x = min(self.speed, abs(dx)) if dx > 0 else -min(self.speed, abs(dx))
+            desired_x = min(move_speed, abs(dx)) if dx > 0 else -min(move_speed, abs(dx))
+            step_x = self.consume_subpixel_step("x", desired_x)
             self.rect.x += step_x
             if self.check_collision(game_map):
                 self.rect.x -= step_x
+                self.move_frac_x = 0
+            else:
+                moved_x = desired_x if step_x else 0
 
         if dy != 0:
-            step_y = min(self.speed, abs(dy)) if dy > 0 else -min(self.speed, abs(dy))
+            desired_y = min(move_speed, abs(dy)) if dy > 0 else -min(move_speed, abs(dy))
+            step_y = self.consume_subpixel_step("y", desired_y)
             self.rect.y += step_y
             if self.check_collision(game_map):
                 self.rect.y -= step_y
+                self.move_frac_y = 0
+            else:
+                moved_y = desired_y if step_y else 0
 
-        if abs(self.rect.x - target_x) <= self.speed and abs(self.rect.y - target_y) <= self.speed:
+        if abs(self.rect.x - target_x) <= move_speed and abs(self.rect.y - target_y) <= move_speed:
             self.rect.x = target_x
             self.rect.y = target_y
             self.path.pop(0)
+            moved_x = 0
+            moved_y = 0
+
+        return (moved_x, moved_y)
 
     def draw(self, screen: pygame.Surface, now: int) -> None:
         """Tính toán hướng đi và vẽ hoạt ảnh kẻ địch lên màn hình."""

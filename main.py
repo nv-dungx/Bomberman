@@ -57,6 +57,15 @@ SAVE_FILE = "savegame.json"
 HUD_HEIGHT = 40
 """int: Độ cao của thanh thông tin (HUD) hiển thị HP và Level."""
 
+ICE_SPEED_MULTIPLIER = 1.2
+"""float: Hệ số tăng tốc khi thực thể đang đi trên ô băng."""
+
+ICE_FRICTION = 0.88
+"""float: Hệ số giảm tốc trượt sau khi rời khỏi ô băng."""
+
+ICE_MIN_SLIDE_SPEED = 0.25
+"""float: Ngưỡng tốc độ đủ nhỏ để dừng trượt hoàn toàn."""
+
 
 class Game:
     """Quản lý vòng lặp chính và trạng thái game Bomberman.
@@ -249,6 +258,128 @@ class Game:
 
         self.change_state(STATE_PLAYING)
 
+    def rect_overlaps_tile(self, rect: pygame.Rect, tile_type: int) -> bool:
+        """Kiểm tra rect có đang chồng lên một loại tile cụ thể không."""
+        grid_x = rect.centerx // TILE_SIZE
+        grid_y = rect.centery // TILE_SIZE
+        for r in range(max(0, grid_y - 1), min(GRID_HEIGHT, grid_y + 2)):
+            for c in range(max(0, grid_x - 1), min(GRID_WIDTH, grid_x + 2)):
+                if self.level_manager.map[r][c] != tile_type:
+                    continue
+                tile_rect = pygame.Rect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                if rect.colliderect(tile_rect):
+                    return True
+        return False
+
+    def prepare_sliding(self, entity) -> None:
+        """Khởi tạo dữ liệu trượt cho entity cũ chưa có thuộc tính này."""
+        if not hasattr(entity, "slide_dx"):
+            entity.slide_dx = 0
+        if not hasattr(entity, "slide_dy"):
+            entity.slide_dy = 0
+        if not hasattr(entity, "move_frac_x"):
+            entity.move_frac_x = 0
+        if not hasattr(entity, "move_frac_y"):
+            entity.move_frac_y = 0
+
+    def consume_subpixel_step(self, entity, axis: str, delta: float) -> int:
+        """Tích lũy phần lẻ để chuyển tốc độ float thành bước pixel ổn định."""
+        attr = "move_frac_x" if axis == "x" else "move_frac_y"
+        total = getattr(entity, attr) + delta
+        step = int(total)
+        setattr(entity, attr, total - step)
+        return step
+
+    def decay_slide(self, entity) -> None:
+        """Giảm dần vận tốc trượt cho đến khi entity dừng hẳn."""
+        entity.slide_dx *= ICE_FRICTION
+        entity.slide_dy *= ICE_FRICTION
+        if abs(entity.slide_dx) < ICE_MIN_SLIDE_SPEED:
+            entity.slide_dx = 0
+        if abs(entity.slide_dy) < ICE_MIN_SLIDE_SPEED:
+            entity.slide_dy = 0
+
+    def move_enemy_by_delta(self, enemy, dx: float, dy: float) -> tuple[float, float]:
+        """Đẩy enemy theo vận tốc trượt, có kiểm tra va chạm từng trục."""
+        moved_x = 0
+        moved_y = 0
+
+        if dx:
+            dx = self.consume_subpixel_step(enemy, "x", dx)
+            enemy.rect.x += dx
+            if enemy.check_collision(self.level_manager.map):
+                enemy.rect.x -= dx
+                enemy.slide_dx = 0
+                enemy.move_frac_x = 0
+            else:
+                moved_x = dx
+
+        if dy:
+            dy = self.consume_subpixel_step(enemy, "y", dy)
+            enemy.rect.y += dy
+            if enemy.check_collision(self.level_manager.map):
+                enemy.rect.y -= dy
+                enemy.slide_dy = 0
+                enemy.move_frac_y = 0
+            else:
+                moved_y = dy
+
+        return (moved_x, moved_y)
+
+    def move_player_with_ice(self, player, dx: float, dy: float) -> None:
+        """Di chuyển player, tăng tốc trên băng và trượt chậm dần khi rời băng."""
+        self.prepare_sliding(player)
+        on_ice = self.rect_overlaps_tile(player.rect, TRAP_ICE)
+
+        if dx or dy:
+            if on_ice:
+                dx *= ICE_SPEED_MULTIPLIER
+                dy *= ICE_SPEED_MULTIPLIER
+            desired_dx = dx
+            desired_dy = dy
+            dx = self.consume_subpixel_step(player, "x", dx)
+            dy = self.consume_subpixel_step(player, "y", dy)
+            before = player.rect.topleft
+            player.move(dx, dy, self.level_manager.map)
+            moved_x = player.rect.x - before[0]
+            moved_y = player.rect.y - before[1]
+            player.slide_dx = desired_dx if on_ice and moved_x else 0
+            player.slide_dy = desired_dy if on_ice and moved_y else 0
+            return
+
+        if player.slide_dx or player.slide_dy:
+            slide_dx = self.consume_subpixel_step(player, "x", player.slide_dx)
+            slide_dy = self.consume_subpixel_step(player, "y", player.slide_dy)
+            before = player.rect.topleft
+            player.move(slide_dx, slide_dy, self.level_manager.map)
+            if player.rect.x == before[0]:
+                player.slide_dx = 0
+                player.move_frac_x = 0
+            if player.rect.y == before[1]:
+                player.slide_dy = 0
+                player.move_frac_y = 0
+            if not on_ice:
+                self.decay_slide(player)
+
+    def handle_entity_teleport(self, entity, now: int) -> None:
+        """Dịch chuyển player hoặc enemy khi đứng trên ô teleport."""
+        if not hasattr(entity, "teleport_cooldown"):
+            entity.teleport_cooldown = 0
+
+        teleports = self.level_manager.teleports
+        grid_pos = (entity.rect.centerx // TILE_SIZE, entity.rect.centery // TILE_SIZE)
+        if not teleports or now <= entity.teleport_cooldown or grid_pos not in teleports:
+            return
+
+        other = teleports[1] if grid_pos == teleports[0] else teleports[0]
+        entity.rect.center = (
+            other[0] * TILE_SIZE + TILE_SIZE // 2,
+            other[1] * TILE_SIZE + TILE_SIZE // 2,
+        )
+        entity.teleport_cooldown = now + 1000
+        if hasattr(entity, "path"):
+            entity.path = []
+
     def load_level(self) -> None:
         """Khởi tạo màn chơi mới và sinh các đối tượng game cần thiết."""
         self.bomb_queue = deque()
@@ -276,14 +407,20 @@ class Game:
             self.player2 = None
 
     def start_campaign(self, is_new_game: bool = False) -> None:
-        """Bắt đầu chế độ Campaign và chuyển sang Character Selection."""
+        """Bắt đầu Campaign; chỉ chọn nhân vật khi chuẩn bị vào level 1."""
         self.sm.play_sfx("select")
         self.is_pvp = False
         if is_new_game:
             self.saved_level = 1
             self.saved_stats = {"speed": PLAYER_SPEED, "range": 2, "shields": []}
             self.save_progress()
-        self.state = STATE_CHARACTER_SELECT
+
+        self.level = self.saved_level
+        if self.level == 1:
+            self.state = STATE_CHARACTER_SELECT
+        else:
+            self.state = STATE_TRANSITION
+            self.transition_timer = pygame.time.get_ticks() + 2000
 
     def start_pvp(self) -> None:
         """Bắt đầu chế độ PvP và chuyển sang Character Selection."""
@@ -401,7 +538,7 @@ class Game:
                 if dx1 != 0 or dy1 != 0:
                     self.player1.last_dx = dx1
                     self.player1.last_dy = dy1
-                self.player1.move(dx1, dy1, self.level_manager.map)
+                self.move_player_with_ice(self.player1, dx1, dy1)
 
             if self.is_pvp and not self.player2.is_dead:
                 dx2, dy2 = 0, 0
@@ -417,7 +554,7 @@ class Game:
                 if dx2 != 0 or dy2 != 0:
                     self.player2.last_dx = dx2
                     self.player2.last_dy = dy2
-                self.player2.move(dx2, dy2, self.level_manager.map)
+                self.move_player_with_ice(self.player2, dx2, dy2)
 
     def place_bomb(self, player) -> None:
         """Xử lý logic đặt bom cho người chơi."""
@@ -573,8 +710,6 @@ class Game:
         if self.is_pvp:
             players.append(self.player2)
 
-        keys = pygame.key.get_pressed()
-
         for p in players:
             if p.is_dead:
                 continue
@@ -582,41 +717,6 @@ class Game:
             px_grid = p.rect.centerx // TILE_SIZE
             py_grid = p.rect.centery // TILE_SIZE
             current_tile = self.level_manager.map[py_grid][px_grid]
-
-            on_ice = False
-            for r in range(max(0, py_grid - 1), min(GRID_HEIGHT, py_grid + 2)):
-                for c in range(max(0, px_grid - 1), min(GRID_WIDTH, px_grid + 2)):
-                    if self.level_manager.map[r][c] == TRAP_ICE:
-                        ice_rect = pygame.Rect(c * TILE_SIZE, r * TILE_SIZE, TILE_SIZE, TILE_SIZE)
-                        if p.rect.colliderect(ice_rect):
-                            on_ice = True
-                            break
-                if on_ice:
-                    break
-
-            if on_ice:
-                is_moving = False
-                if p == self.player1:
-                    is_moving = any(keys[k] for k in [pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s])
-                elif p == self.player2:
-                    is_moving = any(keys[k] for k in [pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN])
-
-                if not is_moving:
-                    if p.last_dx > 0:
-                        slide_x = p.current_speed
-                    elif p.last_dx < 0:
-                        slide_x = -p.current_speed
-                    else:
-                        slide_x = 0
-                        
-                    if p.last_dy > 0:
-                        slide_y = p.current_speed
-                    elif p.last_dy < 0:
-                        slide_y = -p.current_speed
-                    else:
-                        slide_y = 0
-                        
-                    p.move(slide_x, slide_y, self.level_manager.map)
 
             if current_tile == CONVEYOR_LEFT:
                 p.forced_move_queue.append((-2, 0))
@@ -634,16 +734,8 @@ class Game:
                 self.sm.play_sfx("pickup")
 
             teleports = self.level_manager.teleports
-            if teleports and now > p.teleport_cooldown and (px_grid, py_grid) in teleports:
-                if (px_grid, py_grid) == teleports[0]:
-                    other = teleports[1]
-                else:
-                    other = teleports[0]
-                p.rect.center = (
-                    other[0] * TILE_SIZE + TILE_SIZE // 2,
-                    other[1] * TILE_SIZE + TILE_SIZE // 2,
-                )
-                p.teleport_cooldown = now + 1000
+            if teleports:
+                self.handle_entity_teleport(p, now)
 
         if not self.is_pvp:
             px = self.player1.rect.centerx // TILE_SIZE
@@ -659,16 +751,21 @@ class Game:
                     self.change_state(STATE_VICTORY)
                 else:
                     self.saved_level += 1
+                    self.level = self.saved_level
                     self.saved_stats = {
                         "speed": self.player1.current_speed,
                         "range": self.player1.explosion_range,
                         "shields": self.player1.shields.copy(),
                     }
                     self.save_progress()
-                    self.start_campaign(is_new_game=False)
+                    self.state = STATE_TRANSITION
+                    self.transition_timer = pygame.time.get_ticks() + 2000
                 return
 
         for enemy in self.level_manager.enemies:
+            self.prepare_sliding(enemy)
+            enemy_on_ice = self.rect_overlaps_tile(enemy.rect, TRAP_ICE)
+
             ex = enemy.rect.centerx // TILE_SIZE
             ey = enemy.rect.centery // TILE_SIZE
             if 0 <= ex < GRID_WIDTH and 0 <= ey < GRID_HEIGHT:
@@ -684,6 +781,20 @@ class Game:
                         enemy.rect.x -= 2
                     enemy.path = []
 
+            self.handle_entity_teleport(enemy, now)
+
+            if not enemy_on_ice and (enemy.slide_dx or enemy.slide_dy):
+                self.move_enemy_by_delta(enemy, enemy.slide_dx, enemy.slide_dy)
+                self.decay_slide(enemy)
+                self.handle_entity_teleport(enemy, now)
+
+                if self.player1.rect.colliderect(enemy.rect):
+                    old_h = self.player1.lives
+                    self.player1.take_damage(now)
+                    if self.player1.lives < old_h:
+                        self.sm.play_sfx("hurt")
+                continue
+
             px = self.player1.rect.centerx // TILE_SIZE
             py = self.player1.rect.centery // TILE_SIZE
             path = enemy.find_path(
@@ -691,8 +802,19 @@ class Game:
                 self.bomb_queue, self.player1.explosion_range, now,
             )
             
+            moved_x, moved_y = 0, 0
             if path:
-                enemy.move(self.level_manager.map)
+                speed_multiplier = ICE_SPEED_MULTIPLIER if enemy_on_ice else 1.0
+                moved_x, moved_y = enemy.move(self.level_manager.map, speed_multiplier)
+                if enemy_on_ice and (moved_x or moved_y):
+                    enemy.slide_dx = moved_x
+                    enemy.slide_dy = moved_y
+            elif enemy.slide_dx or enemy.slide_dy:
+                self.move_enemy_by_delta(enemy, enemy.slide_dx, enemy.slide_dy)
+                if not enemy_on_ice:
+                    self.decay_slide(enemy)
+
+            self.handle_entity_teleport(enemy, now)
                 
             if self.player1.rect.colliderect(enemy.rect):
                 old_h = self.player1.lives
@@ -728,7 +850,7 @@ class Game:
             font_title = pygame.font.SysFont("Arial", 64, bold=True)
             font_opt = pygame.font.SysFont("Arial", 32)
             
-            title = font_title.render("BOMBERMAN DSA", True, WHITE)
+            title = font_title.render("BOMBERMAN", True, WHITE)
             self.game_surface.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120)))
 
             opt1 = font_opt.render("[1] PvP Mode (2 Players)", True, RED)
