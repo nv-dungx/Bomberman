@@ -87,20 +87,28 @@ class Player:
             surf.fill(BLUE)
             self.frames_down = self.frames_up = self.frames_left = self.frames_right = [surf] * 3
 
-    def move(self, dx: float, dy: float, game_map: list[list[int]]) -> None:
+    def move(
+        self,
+        dx: float,
+        dy: float,
+        game_map: list[list[int]],
+        animate: bool = False,
+        update_direction: bool = True,
+    ) -> None:
         """Di chuyển người chơi, kiểm tra va chạm và cập nhật trạng thái hoạt ảnh.
 
         Args:
             dx (float): Độ dịch chuyển theo trục X.
             dy (float): Độ dịch chuyển theo trục Y.
             game_map (list[list[int]]): Bản đồ 2D.
+            animate (bool): True khi di chuyển đến từ input người chơi.
+            update_direction (bool): False để lực ngoài không ghi đè hướng input.
         """
-        self.is_moving = (dx != 0 or dy != 0)
-        
-        if dx > 0: self.direction = "right"
-        elif dx < 0: self.direction = "left"
-        elif dy > 0: self.direction = "down"
-        elif dy < 0: self.direction = "up"
+        if update_direction:
+            if dx > 0: self.direction = "right"
+            elif dx < 0: self.direction = "left"
+            elif dy > 0: self.direction = "down"
+            elif dy < 0: self.direction = "up"
 
         self.rect.x += dx
         if self.check_collision(game_map):
@@ -109,6 +117,8 @@ class Player:
         self.rect.y += dy
         if self.check_collision(game_map):
             self.rect.y -= dy
+
+        self.is_moving = animate and (dx != 0 or dy != 0)
 
     def check_collision(self, game_map: list[list[int]]) -> bool:
         """Kiểm tra va chạm với các ô tường trên bản đồ."""

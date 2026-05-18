@@ -240,6 +240,7 @@ class Game:
 
         for enemy in self.level_manager.enemies:
             enemy.animation_timer += pause_duration
+            enemy.post_explosion_wait_until += pause_duration
 
         players = [self.player1]
         if self.is_pvp:
@@ -326,7 +327,7 @@ class Game:
 
         return (moved_x, moved_y)
 
-    def move_player_with_ice(self, player, dx: float, dy: float) -> None:
+    def move_player_with_ice(self, player, dx: float, dy: float, animate: bool = False) -> None:
         """Di chuyển player, tăng tốc trên băng và trượt chậm dần khi rời băng."""
         self.prepare_sliding(player)
         on_ice = self.rect_overlaps_tile(player.rect, TRAP_ICE)
@@ -340,7 +341,7 @@ class Game:
             dx = self.consume_subpixel_step(player, "x", dx)
             dy = self.consume_subpixel_step(player, "y", dy)
             before = player.rect.topleft
-            player.move(dx, dy, self.level_manager.map)
+            player.move(dx, dy, self.level_manager.map, animate=animate)
             moved_x = player.rect.x - before[0]
             moved_y = player.rect.y - before[1]
             player.slide_dx = desired_dx if on_ice and moved_x else 0
@@ -360,6 +361,9 @@ class Game:
                 player.move_frac_y = 0
             if not on_ice:
                 self.decay_slide(player)
+            return
+
+        player.is_moving = False
 
     def handle_entity_teleport(self, entity, now: int) -> None:
         """Dịch chuyển player hoặc enemy khi đứng trên ô teleport."""
@@ -508,6 +512,10 @@ class Game:
                     if event.key in (pygame.K_RETURN, pygame.K_ESCAPE):
                         self.sm.play_sfx("select")
                         self.resume_game()
+                    elif event.key == pygame.K_m:
+                        self.sm.play_sfx("select")
+                        self.paused_at = 0
+                        self.change_state(STATE_MENU)
 
             elif self.state == STATE_PLAYING:
                 if event.type == pygame.KEYDOWN:
@@ -538,7 +546,10 @@ class Game:
                 if dx1 != 0 or dy1 != 0:
                     self.player1.last_dx = dx1
                     self.player1.last_dy = dy1
-                self.move_player_with_ice(self.player1, dx1, dy1)
+                self.player1.player_input_active = dx1 != 0 or dy1 != 0
+                self.move_player_with_ice(self.player1, dx1, dy1, animate=self.player1.player_input_active)
+            else:
+                self.player1.player_input_active = False
 
             if self.is_pvp and not self.player2.is_dead:
                 dx2, dy2 = 0, 0
@@ -554,7 +565,10 @@ class Game:
                 if dx2 != 0 or dy2 != 0:
                     self.player2.last_dx = dx2
                     self.player2.last_dy = dy2
-                self.move_player_with_ice(self.player2, dx2, dy2)
+                self.player2.player_input_active = dx2 != 0 or dy2 != 0
+                self.move_player_with_ice(self.player2, dx2, dy2, animate=self.player2.player_input_active)
+            elif self.is_pvp:
+                self.player2.player_input_active = False
 
     def place_bomb(self, player) -> None:
         """Xử lý logic đặt bom cho người chơi."""
@@ -580,6 +594,8 @@ class Game:
         """Xử lý lan truyền vụ nổ và kích hoạt chuỗi bom (chain explosion)."""
         now = pygame.time.get_ticks()
         explosion_queue = deque([(start_x, start_y)])
+        for enemy in self.level_manager.enemies:
+            enemy.on_explosion_started(now)
         
         self.sm.play_sfx("explosion")
 
@@ -725,7 +741,14 @@ class Game:
                 
             while p.forced_move_queue:
                 fdx, fdy = p.forced_move_queue.popleft()
-                p.move(fdx, fdy, self.level_manager.map)
+                input_active = getattr(p, "player_input_active", False)
+                p.move(
+                    fdx,
+                    fdy,
+                    self.level_manager.map,
+                    animate=input_active,
+                    update_direction=not input_active,
+                )
 
             p.update_items(now, current_tile)
             if (px_grid, py_grid) in self.level_manager.powerups:
@@ -765,6 +788,10 @@ class Game:
         for enemy in self.level_manager.enemies:
             self.prepare_sliding(enemy)
             enemy_on_ice = self.rect_overlaps_tile(enemy.rect, TRAP_ICE)
+
+            if not enemy.can_move(now):
+                enemy.path = []
+                continue
 
             ex = enemy.rect.centerx // TILE_SIZE
             ey = enemy.rect.centery // TILE_SIZE
@@ -1023,7 +1050,7 @@ class Game:
                     pause_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 45)),
                 )
 
-                hint_txt = hint_font.render("Press ENTER or ESC to Resume", True, WHITE)
+                hint_txt = hint_font.render("ENTER/ESC Resume   M Menu", True, WHITE)
                 self.game_surface.blit(
                     hint_txt,
                     hint_txt.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 35)),
