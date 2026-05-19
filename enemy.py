@@ -412,6 +412,19 @@ class SmartEnemy(Enemy):
     def __init__(self, grid_x: int, grid_y: int):
         """Khởi tạo SmartEnemy tại ô lưới (grid_x, grid_y)."""
         super().__init__(grid_x, grid_y, speed=2, color=(255, 165, 0), enemy_model="enemy_smart")
+        self.post_explosion_delay = random.randint(300, 500)
+
+    def on_explosion_started(self, now: int) -> None:
+        """EliteEnemy đứng chờ một nhịp để vụ nổ kết thúc rồi mới đi tiếp."""
+        self.post_explosion_wait_until = max(
+            self.post_explosion_wait_until,
+            now + self.post_explosion_delay,
+        )
+        self.path = []
+        self.slide_dx = 0
+        self.slide_dy = 0
+        self.move_frac_x = 0
+        self.move_frac_y = 0
 
     def find_path(
         self,
@@ -467,7 +480,7 @@ class EliteEnemy(Enemy):
         """Khởi tạo EliteEnemy tại ô lưới (grid_x, grid_y)."""
         super().__init__(grid_x, grid_y, speed=2, color=(200, 0, 0), enemy_model="enemy_elite")
         self.reaction_delay = 1500
-        self.post_explosion_delay = random.randint(200, 500)
+        self.post_explosion_delay = random.randint(400, 600)
 
     def on_explosion_started(self, now: int) -> None:
         """EliteEnemy đứng chờ một nhịp để vụ nổ kết thúc rồi mới đi tiếp."""
