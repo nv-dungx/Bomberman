@@ -119,6 +119,7 @@ class Game:
         self.sm = SoundManager()
         self.state = STATE_MENU
         self.paused_at = 0
+        self.menu_buttons = {}
 
         saved_data = self.load_progress()
         self.saved_level = saved_data.get("saved_level", 1)
@@ -251,7 +252,7 @@ class Game:
                 continue
             player.invulnerable_until += pause_duration
             player.teleport_cooldown += pause_duration
-            player.animation_timer += pause_duration
+            player.animation_timer += pause_duration    
             player.active_effects = [
                 (expiry + pause_duration, effect)
                 for expiry, effect in player.active_effects
@@ -449,6 +450,21 @@ class Game:
                         self.start_campaign(is_new_game=True)
                     elif event.key == pygame.K_3 and self.saved_level > 1:
                         self.start_campaign(is_new_game=False)
+                elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    mouse_x, mouse_y = event.pos
+                    game_mouse_y = mouse_y - HUD_HEIGHT
+                    if 0 <= game_mouse_y < SCREEN_HEIGHT:
+                        for action, button_data in self.menu_buttons.items():
+                            if not button_data["enabled"]:
+                                continue
+                            if button_data["rect"].collidepoint(mouse_x, game_mouse_y):
+                                if action == "pvp":
+                                    self.start_pvp()
+                                elif action == "new_campaign":
+                                    self.start_campaign(is_new_game=True)
+                                elif action == "continue_campaign":
+                                    self.start_campaign(is_new_game=False)
+                                break
                         
             elif self.state == STATE_CHARACTER_SELECT:
                 if event.type == pygame.KEYDOWN:
@@ -872,23 +888,104 @@ class Game:
             self.screen.blit(mode_txt, (SCREEN_WIDTH // 2 - mode_txt.get_width() // 2, 8))
 
         self.game_surface.fill(BLACK)
+        self.menu_buttons = {}
 
         if self.state == STATE_MENU:
-            font_title = pygame.font.SysFont("Arial", 64, bold=True)
-            font_opt = pygame.font.SysFont("Arial", 32)
-            
-            title = font_title.render("BOMBERMAN", True, WHITE)
-            self.game_surface.blit(title, title.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 120)))
+            self.game_surface.fill((12, 14, 20))
 
-            opt1 = font_opt.render("[1] PvP Mode (2 Players)", True, RED)
-            opt2 = font_opt.render("[2] New Campaign", True, WHITE)
-            
-            self.game_surface.blit(opt1, opt1.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 - 20)))
-            self.game_surface.blit(opt2, opt2.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 30)))
+            for r in range(GRID_HEIGHT):
+                for c in range(GRID_WIDTH):
+                    pos = (c * TILE_SIZE, r * TILE_SIZE)
+                    self.game_surface.blit(self.floor_img, pos)
+                    if (r + c) % 2 == 0:
+                        tint = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                        tint.fill((0, 0, 0, 42))
+                        self.game_surface.blit(tint, pos)
 
+            overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+            overlay.fill((8, 10, 18, 172))
+            self.game_surface.blit(overlay, (0, 0))
+
+            panel_rect = pygame.Rect(0, 0, 560, 390)
+            panel_rect.center = (SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 10)
+            shadow_rect = panel_rect.move(0, 8)
+            pygame.draw.rect(self.game_surface, (0, 0, 0, 120), shadow_rect, border_radius=12)
+            pygame.draw.rect(self.game_surface, (22, 25, 34), panel_rect, border_radius=12)
+            pygame.draw.rect(self.game_surface, (255, 214, 92), panel_rect, width=2, border_radius=12)
+
+            font_title = pygame.font.SysFont("Arial", 74, bold=True)
+            font_sub = pygame.font.SysFont("Arial", 20, bold=True)
+            font_opt = pygame.font.SysFont("Arial", 27, bold=True)
+            font_key = pygame.font.SysFont("Arial", 24, bold=True)
+            font_hint = pygame.font.SysFont("Arial", 18)
+
+            title_shadow = font_title.render("BOMBERMAN", True, (0, 0, 0))
+            title = font_title.render("BOMBERMAN", True, GOLD)
+            title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.top + 64))
+            self.game_surface.blit(title_shadow, title_rect.move(4, 5))
+            self.game_surface.blit(title, title_rect)
+
+            subtitle = font_sub.render("Campaign & PvP Battle Arena", True, (210, 220, 235))
+            self.game_surface.blit(subtitle, subtitle.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.top + 118)))
+
+            def draw_menu_button(
+                y: int,
+                key_label: str,
+                label: str,
+                color: tuple[int, int, int],
+                action: str,
+                enabled: bool = True,
+            ) -> None:
+                button_rect = pygame.Rect(panel_rect.left + 70, y, panel_rect.width - 140, 54)
+                fill = (39, 44, 58) if enabled else (32, 34, 42)
+                border = color if enabled else (85, 85, 92)
+                text_color = WHITE if enabled else (125, 125, 132)
+                key_color = color if enabled else (105, 105, 112)
+                self.menu_buttons[action] = {"rect": button_rect.copy(), "enabled": enabled}
+
+                pygame.draw.rect(self.game_surface, (0, 0, 0, 90), button_rect.move(0, 4), border_radius=8)
+                pygame.draw.rect(self.game_surface, fill, button_rect, border_radius=8)
+                pygame.draw.rect(self.game_surface, border, button_rect, width=2, border_radius=8)
+
+                key_rect = pygame.Rect(button_rect.left + 14, button_rect.top + 10, 34, 34)
+                pygame.draw.rect(self.game_surface, (18, 20, 28), key_rect, border_radius=6)
+                pygame.draw.rect(self.game_surface, key_color, key_rect, width=2, border_radius=6)
+                key_txt = font_key.render(key_label, True, key_color)
+                self.game_surface.blit(key_txt, key_txt.get_rect(center=key_rect.center))
+
+                label_font_size = 27
+                max_label_width = button_rect.width - 84
+                label_font = pygame.font.SysFont("Arial", label_font_size, bold=True)
+                label_txt = label_font.render(label, True, text_color)
+                while label_txt.get_width() > max_label_width and label_font_size > 18:
+                    label_font_size -= 1
+                    label_font = pygame.font.SysFont("Arial", label_font_size, bold=True)
+                    label_txt = label_font.render(label, True, text_color)
+                self.game_surface.blit(label_txt, label_txt.get_rect(midleft=(button_rect.left + 66, button_rect.centery)))
+
+            button_y = panel_rect.top + 155
+            draw_menu_button(button_y, "1", "PvP Mode - 2 Players", RED, "pvp")
+            draw_menu_button(button_y + 68, "2", "New Campaign", LIGHT_BLUE, "new_campaign")
             if self.saved_level > 1:
-                opt3 = font_opt.render(f"[3] Continue Campaign (Level {self.saved_level})", True, YELLOW)
-                self.game_surface.blit(opt3, opt3.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2 + 80)))
+                draw_menu_button(
+                    button_y + 136,
+                    "3",
+                    f"Continue Campaign - Level {self.saved_level}",
+                    YELLOW,
+                    "continue_campaign",
+                )
+            else:
+                draw_menu_button(
+                    button_y + 136,
+                    "3",
+                    "Continue Campaign - No Checkpoint",
+                    GRAY,
+                    "continue_campaign",
+                    enabled=False,
+                )
+
+            hint = font_hint.render("Press a number key to choose mode", True, (180, 188, 200))
+            self.game_surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.bottom - 28)))
 
         elif self.state == STATE_CHARACTER_SELECT:
             f_title = pygame.font.SysFont("Arial", 48, True)
