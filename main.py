@@ -152,7 +152,7 @@ class Game:
                         # Cắt lấy frame đầu tiên (kích thước chuẩn của Player là 30x30)
                         preview = sheet.subsurface((0, 0, 30, 30))
                         # Phóng to gấp đôi (60x60) để hiển thị rực rỡ trên màn hình chọn tướng
-                        scaled_preview = pygame.transform.scale(preview, (60, 60))
+                        scaled_preview = pygame.transform.scale(preview, (96, 96))
                         self.model_previews[model_name] = scaled_preview
                     except Exception as e:
                         print(f"Lỗi tải ảnh preview cho {model_name}: {e}")
@@ -162,7 +162,7 @@ class Game:
         # Fallback an toàn nếu lỡ xóa mất hết file ảnh nhân vật
         if not self.available_models:
             self.available_models = ["Player_1"]
-            fallback_surf = pygame.Surface((60, 60))
+            fallback_surf = pygame.Surface((96, 96))
             fallback_surf.fill(BLUE)
             self.model_previews["Player_1"] = fallback_surf
 
@@ -865,6 +865,114 @@ class Game:
                 if self.player1.lives < old_h:
                     self.sm.play_sfx("hurt")
 
+    def draw_character_select_screen(self, base_font: pygame.font.Font) -> None:
+        """Render the character select screen with larger previews and card layout."""
+        self.game_surface.fill((11, 14, 21))
+
+        for r in range(GRID_HEIGHT):
+            for c in range(GRID_WIDTH):
+                pos = (c * TILE_SIZE, r * TILE_SIZE)
+                self.game_surface.blit(self.floor_img, pos)
+                shade = pygame.Surface((TILE_SIZE, TILE_SIZE), pygame.SRCALPHA)
+                shade.fill((6, 8, 14, 118 if (r + c) % 2 == 0 else 102))
+                self.game_surface.blit(shade, pos)
+
+        overlay = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
+        overlay.fill((9, 10, 18, 128))
+        self.game_surface.blit(overlay, (0, 0))
+
+        title_font = pygame.font.SysFont("Arial", 52, True)
+        sub_font = pygame.font.SysFont("Arial", 21, True)
+        name_font = pygame.font.SysFont("Arial", 28, True)
+        hint_font = pygame.font.SysFont("Arial", 22)
+        control_font = pygame.font.SysFont("Arial", 19, True)
+
+        title_shadow = title_font.render("SELECT YOUR CHARACTER", True, (0, 0, 0))
+        title = title_font.render("SELECT YOUR CHARACTER", True, YELLOW)
+        title_rect = title.get_rect(center=(SCREEN_WIDTH // 2, 68))
+        self.game_surface.blit(title_shadow, title_rect.move(3, 4))
+        self.game_surface.blit(title, title_rect)
+
+        subtitle_text = "Choose your fighter before the match starts"
+        if not self.is_pvp:
+            subtitle_text = "Choose your campaign hero for the run ahead"
+        subtitle = sub_font.render(subtitle_text, True, (210, 220, 235))
+        self.game_surface.blit(subtitle, subtitle.get_rect(center=(SCREEN_WIDTH // 2, 116)))
+
+        def draw_character_card(
+            rect: pygame.Rect,
+            heading: str,
+            control_text: str,
+            accent: tuple[int, int, int],
+            model_name: str,
+        ) -> None:
+            pygame.draw.rect(self.game_surface, (0, 0, 0, 95), rect.move(0, 8), border_radius=12)
+            pygame.draw.rect(self.game_surface, (24, 28, 39), rect, border_radius=12)
+            pygame.draw.rect(self.game_surface, accent, rect, width=3, border_radius=12)
+
+            heading_txt = base_font.render(heading, True, accent)
+            self.game_surface.blit(heading_txt, heading_txt.get_rect(center=(rect.centerx, rect.top + 38)))
+
+            control_rect = pygame.Rect(rect.left + 34, rect.top + 64, rect.width - 68, 34)
+            pygame.draw.rect(self.game_surface, (17, 20, 28), control_rect, border_radius=7)
+            control_txt = control_font.render(control_text, True, (226, 231, 240))
+            self.game_surface.blit(control_txt, control_txt.get_rect(center=control_rect.center))
+
+            preview_box = pygame.Rect(rect.left + 80, rect.top + 120, rect.width - 160, 140)
+            pygame.draw.rect(self.game_surface, (18, 22, 31), preview_box, border_radius=10)
+            pygame.draw.rect(self.game_surface, (75, 82, 98), preview_box, width=1, border_radius=10)
+
+            if model_name in self.model_previews:
+                preview_img = self.model_previews[model_name]
+                preview_scale = 1.35
+                preview_size = (
+                    int(preview_img.get_width() * preview_scale),
+                    int(preview_img.get_height() * preview_scale),
+                )
+                preview_surface = pygame.transform.scale(preview_img, preview_size)
+                self.game_surface.blit(
+                    preview_surface,
+                    preview_surface.get_rect(center=(preview_box.centerx, preview_box.centery + 2)),
+                )
+
+                name_txt = name_font.render(model_name, True, WHITE)
+                self.game_surface.blit(name_txt, name_txt.get_rect(center=(rect.centerx, rect.bottom - 26)))
+
+        if self.is_pvp:
+            card_width = 330
+            gap = 60
+            left_x = (SCREEN_WIDTH - (card_width * 2 + gap)) // 2
+            card_y = 165
+            p1_rect = pygame.Rect(left_x, card_y, card_width, 290)
+            p2_rect = pygame.Rect(left_x + card_width + gap, card_y, card_width, 290)
+            draw_character_card(
+                p1_rect,
+                "PLAYER 1",
+                "A / D to switch",
+                BLUE,
+                self.available_models[self.p1_model_idx],
+            )
+            draw_character_card(
+                p2_rect,
+                "PLAYER 2",
+                "LEFT / RIGHT to switch",
+                RED,
+                self.available_models[self.p2_model_idx],
+            )
+        else:
+            card_rect = pygame.Rect(0, 0, 380, 300)
+            card_rect.center = (SCREEN_WIDTH // 2, 315)
+            draw_character_card(
+                card_rect,
+                "PLAYER 1",
+                "A / D to switch",
+                BLUE,
+                self.available_models[self.p1_model_idx],
+            )
+
+        hint = hint_font.render("Press ENTER to start", True, (220, 225, 233))
+        self.game_surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT - 58)))
+
     def draw(self) -> None:
         """Render toàn bộ nội dung game lên màn hình mỗi frame."""
         self.screen.fill((20, 20, 20))
@@ -988,6 +1096,9 @@ class Game:
             self.game_surface.blit(hint, hint.get_rect(center=(SCREEN_WIDTH // 2, panel_rect.bottom - 28)))
 
         elif self.state == STATE_CHARACTER_SELECT:
+            self.draw_character_select_screen(font)
+
+        elif False and self.state == STATE_CHARACTER_SELECT:
             f_title = pygame.font.SysFont("Arial", 48, True)
             f_hint = pygame.font.SysFont("Arial", 24)
             
